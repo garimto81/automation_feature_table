@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=540px, initial-scale=1.0">
+    <title>2중 안정성 아키텍처</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: transparent;
+            display: flex;
+            justify-content: center;
+            padding: 0;
+        }
+
+        #capture-area {
+            width: 540px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            padding: 24px;
+        }
+
+        .title {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a73e8;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 14px;
+            color: #5f6368;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e8eaed;
+        }
+
+        /* 2중 필터 컨테이너 */
+        .dual-filter {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .filter-box {
+            flex: 1;
+            border-radius: 12px;
+            padding: 16px;
+            position: relative;
+        }
+
+        .filter-box.primary {
+            background: linear-gradient(135deg, #e8f0fe 0%, #d2e3fc 100%);
+            border: 2px solid #1a73e8;
+        }
+
+        .filter-box.secondary {
+            background: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
+            border: 2px solid #34a853;
+        }
+
+        .filter-label {
+            position: absolute;
+            top: -10px;
+            left: 16px;
+            background: white;
+            padding: 2px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            border-radius: 10px;
+        }
+
+        .filter-box.primary .filter-label {
+            color: #1a73e8;
+            border: 1px solid #1a73e8;
+        }
+
+        .filter-box.secondary .filter-label {
+            color: #34a853;
+            border: 1px solid #34a853;
+        }
+
+        .filter-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            margin-top: 4px;
+        }
+
+        .filter-box.primary .filter-title { color: #1a73e8; }
+        .filter-box.secondary .filter-title { color: #34a853; }
+
+        .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: white;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #202124;
+        }
+
+        .filter-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .filter-item .icon {
+            font-size: 16px;
+        }
+
+        /* 분리 표시 */
+        .separator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+            gap: 12px;
+        }
+
+        .separator-line {
+            flex: 1;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #dadce0, transparent);
+        }
+
+        .separator-text {
+            font-size: 12px;
+            font-weight: 500;
+            color: #5f6368;
+            background: #f8f9fa;
+            padding: 6px 14px;
+            border-radius: 16px;
+            border: 1px solid #dadce0;
+        }
+
+        /* Fusion Engine */
+        .fusion-box {
+            background: linear-gradient(135deg, #fef7e0 0%, #feefc3 100%);
+            border: 2px solid #f9ab00;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .fusion-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #f9ab00;
+            margin-bottom: 8px;
+        }
+
+        .fusion-desc {
+            font-size: 16px;
+            font-weight: 500;
+            color: #202124;
+            margin-bottom: 6px;
+        }
+
+        .fusion-sub {
+            font-size: 13px;
+            color: #5f6368;
+        }
+
+        /* 화살표 */
+        .arrow-down {
+            display: flex;
+            justify-content: center;
+            margin: 12px 0;
+        }
+
+        .arrow-down svg {
+            width: 24px;
+            height: 24px;
+            fill: #5f6368;
+        }
+
+        /* 출력 */
+        .output-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 14px;
+            margin-top: 16px;
+        }
+
+        .output-title {
+            font-size: 12px;
+            font-weight: 500;
+            color: #5f6368;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .output-row {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .output-box {
+            background: white;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 10px 14px;
+            text-align: center;
+        }
+
+        .output-box .icon {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .output-box .name {
+            font-size: 12px;
+            font-weight: 500;
+            color: #202124;
+        }
+    </style>
+</head>
+<body>
+    <div id="capture-area">
+        <div class="title">2중 안정성 아키텍처</div>
+        <div class="subtitle">두 개의 필터를 완전히 분리하여 독립적으로 분석</div>
+
+        <!-- 2중 필터 -->
+        <div class="dual-filter">
+            <!-- Filter 1: GFX -->
+            <div class="filter-box primary">
+                <span class="filter-label">FILTER 1</span>
+                <div class="filter-title">GFX 분석</div>
+                <div class="filter-item">
+                    <span class="icon">📡</span>
+                    <span>PokerGFX RFID</span>
+                </div>
+                <div class="filter-item">
+                    <span class="icon">📄</span>
+                    <span>JSON Hand Events</span>
+                </div>
+                <div class="filter-item">
+                    <span class="icon">🎯</span>
+                    <span>99.9% 정확도</span>
+                </div>
+            </div>
+
+            <!-- Filter 2: Live API -->
+            <div class="filter-box secondary">
+                <span class="filter-label">FILTER 2</span>
+                <div class="filter-title">Live API 분석</div>
+                <div class="filter-item">
+                    <span class="icon">🎥</span>
+                    <span>Gemini Live API</span>
+                </div>
+                <div class="filter-item">
+                    <span class="icon">🤖</span>
+                    <span>AI Video Inference</span>
+                </div>
+                <div class="filter-item">
+                    <span class="icon">⚡</span>
+                    <span>Real-time 분석</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 분리 표시 -->
+        <div class="separator">
+            <div class="separator-line"></div>
+            <span class="separator-text">완전 분리 → 조합 추론</span>
+            <div class="separator-line"></div>
+        </div>
+
+        <!-- Fusion Engine -->
+        <div class="fusion-box">
+            <div class="fusion-title">FUSION ENGINE</div>
+            <div class="fusion-desc">두 결과를 조합하여 최종 데이터 추론</div>
+            <div class="fusion-sub">교차 검증 + 상호 보완 + 신뢰도 산출</div>
+        </div>
+
+        <div class="arrow-down">
+            <svg viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+        </div>
+
+        <!-- Output -->
+        <div class="output-section">
+            <div class="output-title">Output</div>
+            <div class="output-row">
+                <div class="output-box">
+                    <div class="icon">📊</div>
+                    <div class="name">핸드 등급</div>
+                </div>
+                <div class="output-box">
+                    <div class="icon">🎬</div>
+                    <div class="name">편집점</div>
+                </div>
+                <div class="output-box">
+                    <div class="icon">📺</div>
+                    <div class="name">Overlay</div>
+                </div>
+                <div class="output-box">
+                    <div class="icon">📈</div>
+                    <div class="name">Dashboard</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

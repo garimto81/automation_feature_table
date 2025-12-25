@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=540px, initial-scale=1.0">
+    <title>Fusion Engine: 2중 검증 로직</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: transparent;
+            display: flex;
+            justify-content: center;
+            padding: 0;
+        }
+
+        #capture-area {
+            width: 540px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            padding: 24px;
+        }
+
+        .title {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #ea4335;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 13px;
+            color: #5f6368;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e8eaed;
+        }
+
+        /* 입력 소스 */
+        .input-sources {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .source-box {
+            flex: 1;
+            padding: 14px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .source-box.gfx {
+            background: linear-gradient(135deg, #e8f0fe 0%, #d2e3fc 100%);
+            border: 2px solid #1a73e8;
+        }
+
+        .source-box.live {
+            background: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
+            border: 2px solid #34a853;
+        }
+
+        .source-icon {
+            font-size: 24px;
+            margin-bottom: 6px;
+        }
+
+        .source-name {
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .source-box.gfx .source-name { color: #1a73e8; }
+        .source-box.live .source-name { color: #34a853; }
+
+        .source-data {
+            font-size: 11px;
+            color: #5f6368;
+            margin-top: 4px;
+        }
+
+        /* 병합 화살표 */
+        .merge-visual {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 16px 0;
+            gap: 8px;
+        }
+
+        .merge-line {
+            width: 80px;
+            height: 2px;
+            background: #dadce0;
+        }
+
+        .merge-line.left {
+            transform: rotate(20deg);
+        }
+
+        .merge-line.right {
+            transform: rotate(-20deg);
+        }
+
+        .merge-icon {
+            font-size: 24px;
+        }
+
+        /* 조합 프로세스 */
+        .fusion-process {
+            background: linear-gradient(135deg, #fef7e0 0%, #feefc3 100%);
+            border: 2px solid #f9ab00;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .fusion-header {
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .fusion-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #f9ab00;
+            margin-bottom: 4px;
+        }
+
+        .fusion-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #202124;
+        }
+
+        .fusion-steps {
+            display: flex;
+            gap: 10px;
+        }
+
+        .step {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .step-number {
+            width: 24px;
+            height: 24px;
+            background: #f9ab00;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 8px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .step-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #202124;
+            margin-bottom: 4px;
+        }
+
+        .step-desc {
+            font-size: 11px;
+            color: #5f6368;
+        }
+
+        /* 출력 결과 */
+        .output-section {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border: 2px solid #4caf50;
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .output-header {
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .output-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #4caf50;
+            margin-bottom: 4px;
+        }
+
+        .output-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #202124;
+        }
+
+        .output-items {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .output-item {
+            background: white;
+            border-radius: 8px;
+            padding: 10px 16px;
+            text-align: center;
+        }
+
+        .output-item .icon {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .output-item .name {
+            font-size: 12px;
+            font-weight: 500;
+            color: #202124;
+        }
+
+        /* 핵심 포인트 */
+        .key-point {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #ea4335;
+        }
+
+        .key-point-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #ea4335;
+            margin-bottom: 6px;
+        }
+
+        .key-point-text {
+            font-size: 13px;
+            color: #202124;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div id="capture-area">
+        <div class="title">Fusion Engine: 2중 검증 로직</div>
+        <div class="subtitle">선택이 아닌 조합 - 두 결과를 융합하여 완성된 데이터 추론</div>
+
+        <!-- 입력 소스 -->
+        <div class="input-sources">
+            <div class="source-box gfx">
+                <div class="source-icon">📡</div>
+                <div class="source-name">GFX 분석 결과</div>
+                <div class="source-data">카드 정보 + 핸드 이벤트</div>
+            </div>
+            <div class="source-box live">
+                <div class="source-icon">🤖</div>
+                <div class="source-name">Live API 결과</div>
+                <div class="source-data">AI 추론 + 신뢰도</div>
+            </div>
+        </div>
+
+        <!-- 병합 화살표 -->
+        <div class="merge-visual">
+            <div class="merge-line left"></div>
+            <div class="merge-icon">⬇️</div>
+            <div class="merge-line right"></div>
+        </div>
+
+        <!-- 조합 프로세스 -->
+        <div class="fusion-process">
+            <div class="fusion-header">
+                <div class="fusion-label">FUSION PROCESS</div>
+                <div class="fusion-title">두 결과를 조합하여 추론</div>
+            </div>
+            <div class="fusion-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-title">교차 검증</div>
+                    <div class="step-desc">일치 여부 확인</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-title">상호 보완</div>
+                    <div class="step-desc">누락 데이터 채움</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-title">신뢰도 산출</div>
+                    <div class="step-desc">최종 확률 계산</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 출력 결과 -->
+        <div class="output-section">
+            <div class="output-header">
+                <div class="output-label">FUSED OUTPUT</div>
+                <div class="output-title">하나의 완성된 데이터</div>
+            </div>
+            <div class="output-items">
+                <div class="output-item">
+                    <div class="icon">🃏</div>
+                    <div class="name">확정 카드</div>
+                </div>
+                <div class="output-item">
+                    <div class="icon">📊</div>
+                    <div class="name">핸드 등급</div>
+                </div>
+                <div class="output-item">
+                    <div class="icon">🎯</div>
+                    <div class="name">신뢰도</div>
+                </div>
+                <div class="output-item">
+                    <div class="icon">🎬</div>
+                    <div class="name">편집점</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 핵심 포인트 -->
+        <div class="key-point">
+            <div class="key-point-title">핵심 차별점</div>
+            <div class="key-point-text">
+                Primary/Secondary 중 택일 ❌<br>
+                두 검증 로직을 조합 → 완성된 데이터로 추론 ✅
+            </div>
+        </div>
+    </div>
+</body>
+</html>

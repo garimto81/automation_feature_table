@@ -1,0 +1,47 @@
+[project]
+name = "poker-hand-auto-capture"
+version = "0.1.0"
+description = "Poker Feature Table Hand Auto-Capture and Classification System"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Your Name", email = "your@email.com" }]
+
+dependencies = [
+    "phevaluator>=0.5.0",
+    "websockets>=12.0",
+    "opencv-python>=4.8.0",
+    "aiohttp>=3.9.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

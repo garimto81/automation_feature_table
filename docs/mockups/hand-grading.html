@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=540px, initial-scale=1.0">
+    <title>핸드 등급 분류 기준</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: transparent;
+            display: flex;
+            justify-content: center;
+            padding: 0;
+        }
+
+        #capture-area {
+            width: 540px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            padding: 24px;
+            border-radius: 12px;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 22px;
+            margin-bottom: 20px;
+            color: #00d9ff;
+            text-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: #ffd700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 18px;
+            background: #ffd700;
+            border-radius: 2px;
+        }
+
+        /* 조건 카드 - 3개 */
+        .conditions {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .condition-card {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+            border-radius: 10px;
+            padding: 14px 10px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .condition-number {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #00d9ff, #0066ff);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .condition-title {
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .condition-desc {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.4;
+        }
+
+        .condition-note {
+            font-size: 11px;
+            color: #ffd700;
+            margin-top: 6px;
+        }
+
+        /* 화살표 */
+        .arrow-section {
+            text-align: center;
+            padding: 12px 0;
+        }
+
+        .arrow {
+            font-size: 24px;
+            color: #00d9ff;
+        }
+
+        /* 등급 결과 */
+        .grade-result {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .grade-card {
+            border-radius: 10px;
+            padding: 16px 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            min-width: 150px;
+        }
+
+        .grade-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }
+
+        .grade-pass {
+            background: linear-gradient(145deg, rgba(0, 200, 83, 0.2), rgba(0, 200, 83, 0.05));
+            border: 2px solid #00c853;
+        }
+
+        .grade-pass::before {
+            background: linear-gradient(90deg, #00c853, #00e676);
+        }
+
+        .grade-fail {
+            background: linear-gradient(145deg, rgba(128, 128, 128, 0.2), rgba(128, 128, 128, 0.05));
+            border: 2px solid #666;
+        }
+
+        .grade-fail::before {
+            background: linear-gradient(90deg, #888, #555);
+        }
+
+        .grade-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .grade-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .grade-pass .grade-title { color: #00c853; }
+        .grade-fail .grade-title { color: #888; }
+
+        .grade-desc {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        /* 하단 안내 */
+        .note {
+            text-align: center;
+            padding: 14px;
+            background: linear-gradient(135deg, rgba(0, 217, 255, 0.1), rgba(0, 102, 255, 0.1));
+            border-radius: 10px;
+            border: 1px solid rgba(0, 217, 255, 0.3);
+            margin-top: 16px;
+        }
+
+        .note-text {
+            font-size: 16px;
+            font-weight: 700;
+            color: #00d9ff;
+        }
+
+        .note-sub {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 6px;
+        }
+
+        /* 족보 참조 */
+        .hand-ranks {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+            margin-top: 12px;
+        }
+
+        .rank-tag {
+            background: rgba(255, 215, 0, 0.15);
+            color: #ffd700;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+        }
+
+        .rank-tag.premium {
+            background: rgba(0, 217, 255, 0.15);
+            color: #00d9ff;
+            border-color: rgba(0, 217, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="capture-area">
+        <h1>핸드 등급 분류 기준</h1>
+
+        <!-- 조건 섹션 -->
+        <div class="section">
+            <div class="section-title">분류 조건 (2개 이상 충족 시 등급 확보)</div>
+            <div class="conditions">
+                <div class="condition-card">
+                    <div class="condition-number">1</div>
+                    <div class="condition-title">프리미엄 핸드</div>
+                    <div class="condition-desc">플레이어 소유 핸드가 프리미엄</div>
+                    <div class="condition-note">등급 1-4</div>
+                </div>
+                <div class="condition-card">
+                    <div class="condition-number">2</div>
+                    <div class="condition-title">플레이 시간</div>
+                    <div class="condition-desc">핸드 플레이 시간이 긴 경우</div>
+                    <div class="condition-note">평균 × 1.5배</div>
+                </div>
+                <div class="condition-card">
+                    <div class="condition-number">3</div>
+                    <div class="condition-title">보드 조합</div>
+                    <div class="condition-desc">보드+핸드 조합이 Triple 이상</div>
+                    <div class="condition-note">7번부터 체크</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 프리미엄 핸드 참조 -->
+        <div class="section">
+            <div class="section-title">프리미엄 핸드 (등급 1-4)</div>
+            <div class="hand-ranks">
+                <span class="rank-tag">1. Royal Flush</span>
+                <span class="rank-tag">2. Straight Flush</span>
+                <span class="rank-tag">3. Four of a Kind</span>
+                <span class="rank-tag">4. Full House</span>
+            </div>
+            <div class="section-title" style="margin-top: 16px;">보드 조합 기준 (등급 7+)</div>
+            <div class="hand-ranks">
+                <span class="rank-tag premium">7. Three of a Kind</span>
+                <span class="rank-tag premium">6. Straight</span>
+                <span class="rank-tag premium">5. Flush</span>
+                <span class="rank-tag premium">4. Full House</span>
+                <span class="rank-tag premium">3. Quads</span>
+                <span class="rank-tag premium">2. St. Flush</span>
+                <span class="rank-tag premium">1. Royal</span>
+            </div>
+        </div>
+
+        <div class="arrow-section">
+            <div class="arrow">↓</div>
+        </div>
+
+        <!-- 등급 결과 -->
+        <div class="grade-result">
+            <div class="grade-card grade-pass">
+                <div class="grade-icon">✅</div>
+                <div class="grade-title">등급 확보</div>
+                <div class="grade-desc">2개 이상 충족</div>
+            </div>
+            <div class="grade-card grade-fail">
+                <div class="grade-icon">⏭️</div>
+                <div class="grade-title">스킵</div>
+                <div class="grade-desc">1개 이하 충족</div>
+            </div>
+        </div>
+
+        <!-- 안내 -->
+        <div class="note">
+            <div class="note-text">2개 이상 조건 충족 → 방송 소스 제공</div>
+            <div class="note-sub">종합 편집팀에 핸드 단위로 분리된 소스 전달</div>
+        </div>
+    </div>
+</body>
+</html>
