@@ -34,7 +34,6 @@ PokerGFX 기반 멀티테이블 포커 핸드 자동 캡처 및 분류 시스템
 - **핸드 등급 자동 분류**: Royal Flush ~ High Card (10단계)
 - **2중 안정성 아키텍처**: Primary(PokerGFX) + Secondary(AI Video) 이중화
 - **실시간 오버레이**: WebSocket 기반 방송용 그래픽
-- **통계 저장**: Hand2Note 연동
 - **클립 마킹**: EDL/FCPXML 편집점 자동 생성
 
 ## 아키텍처

@@ -53,7 +53,7 @@ PokerGFX.io 솔루션을 사용하는 포커 프로덕션 환경에서 여러 �
 1. **핸드 시작/종료 자동 감지**: 각 테이블에서 핸드의 시작점과 종료점을 정확하게 포착
 2. **핸드 등급 자동 분류**: 족보(Royal Flush ~ High Card)에 따른 자동 분류
 3. **2중 안정성 확보**: Primary(PokerGFX JSON API) + Secondary(AI Video) 이중화 아키텍처
-4. **실시간 오버레이 및 통계 저장**: 방송용 오버레이와 Hand2Note 연동
+4. **실시간 오버레이**: 방송용 오버레이 데이터 제공
 
 ### 1.3 성공 지표
 
@@ -87,7 +87,6 @@ PokerGFX.io 솔루션을 사용하는 포커 프로덕션 환경에서 여러 �
 | 3. 소스 제공 | 실제 송출에 필요한 핸드 선별 → 종합 편집팀 전달 |
 
 **구체적 활용**:
-- 통계/분석 저장 (Hand2Note 연동)
 - 실시간 스트리밍 오버레이 (핸드 등급 표시)
 - 하이라이트 클립 자동 마킹 (후반 편집용)
 
@@ -176,10 +175,9 @@ Primary와 Secondary 중 **하나를 선택하는 것이 아니라**, 두 검증
 | F-003 | 핸드 등급 분류 | P0 | 족보 자동 분류 (10단계) |
 | F-004 | 멀티테이블 동시 처리 | P0 | 3-5대 테이블 병렬 처리 |
 | F-005 | 2중 검증 | P1 | Primary-Secondary 교차 검증 |
-| F-006 | Hand2Note 연동 | P1 | 핸드 히스토리 자동 전송 |
-| F-007 | 실시간 오버레이 | P1 | WebSocket 기반 방송 오버레이 |
-| F-008 | 클립 마커 생성 | P2 | EDL/XML 편집점 자동 생성 |
-| F-009 | 모니터링 대시보드 | P2 | 시스템 상태 실시간 모니터링 |
+| F-006 | 실시간 오버레이 | P1 | WebSocket 기반 방송 오버레이 |
+| F-007 | 클립 마커 생성 | P2 | EDL/XML 편집점 자동 생성 |
+| F-008 | 모니터링 대시보드 | P2 | 시스템 상태 실시간 모니터링 |
 
 ### 4.2 족보 등급표
 
@@ -242,7 +240,6 @@ Primary와 Secondary 중 **하나를 선택하는 것이 아니라**, 두 검증
 | Secondary | AI Video | Gemini 2.5 Flash Live API | WebSocket |
 | Secondary | Video Capture | OpenCV + FFmpeg | RTSP/NDI 입력 |
 | Fusion | Engine | Python 3.11+ | 비동기 처리 |
-| Output | Statistics | Hand2Note API | $8/월 |
 | Output | Overlay | WebSocket + HTML | 브라우저 소스 |
 | Output | Markers | EDL/XML | Premiere/DaVinci 호환 |
 | Infra | Server | 기존 장비 활용 | 별도 GPU 불필요 |
@@ -253,9 +250,8 @@ Primary와 Secondary 중 **하나를 선택하는 것이 아니라**, 두 검증
 |------|----------|-------------|
 | PokerGFX 라이선스 | (기존) | - |
 | Gemini API | - | $500~1,000 |
-| Hand2Note Pro | - | $8 |
 | 서버 | 기존 장비 활용 | - |
-| **합계** | - | **$510~1,010** |
+| **합계** | - | **$500~1,000** |
 
 ---
 
@@ -331,7 +327,6 @@ Primary와 Secondary 중 **하나를 선택하는 것이 아니라**, 두 검증
 - [ ] 부하 테스트 및 최적화
 
 **Week 7 (02/17 ~ 02/23)**
-- [ ] Hand2Note 연동
 - [ ] 실시간 오버레이 개발
 - [ ] EDL/XML 클립 마커 생성
 
@@ -385,7 +380,6 @@ Primary와 Secondary 중 **하나를 선택하는 것이 아니라**, 두 검증
 - [Gemini Live API](https://ai.google.dev/gemini-api/docs/live)
 - [Gemini 3 Flash](https://blog.google/products/gemini/gemini-3-flash/)
 - [phevaluator](https://github.com/HenryRLee/PokerHandEvaluator)
-- [Hand2Note API](https://github.com/hand2note/Hand2NoteApi)
 
 ### B. 용어 정의
 
