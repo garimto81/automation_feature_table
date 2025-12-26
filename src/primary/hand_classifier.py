@@ -1,6 +1,5 @@
 """Hand classification using phevaluator."""
 
-from typing import Optional
 
 from phevaluator import evaluate_cards
 
@@ -136,7 +135,7 @@ class HandClassifier:
         self,
         players: list[dict],
         community_cards: list[Card],
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """
         Find the best hand among players.
 

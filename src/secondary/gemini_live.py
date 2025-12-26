@@ -4,11 +4,10 @@ import asyncio
 import base64
 import json
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import AsyncIterator, Optional
 
 import websockets
-from websockets.exceptions import ConnectionClosed
 
 from src.config.settings import GeminiSettings
 from src.models.hand import AIVideoResult, Card, HandRank
@@ -55,9 +54,9 @@ If nothing significant is detected, use event: "none" with low confidence."""
     def __init__(self, settings: GeminiSettings, table_id: str):
         self.settings = settings
         self.table_id = table_id
-        self._ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._ws: websockets.WebSocketClientProtocol | None = None
         self._running = False
-        self._session_start: Optional[datetime] = None
+        self._session_start: datetime | None = None
 
     async def connect(self) -> None:
         """Establish WebSocket connection to Gemini Live API."""
@@ -118,7 +117,7 @@ If nothing significant is detected, use event: "none" with low confidence."""
                 await self.disconnect()
             await self.connect()
 
-    async def analyze_frame(self, frame: VideoFrame) -> Optional[AIVideoResult]:
+    async def analyze_frame(self, frame: VideoFrame) -> AIVideoResult | None:
         """
         Analyze a single video frame.
 
@@ -157,7 +156,7 @@ If nothing significant is detected, use event: "none" with low confidence."""
 
             return self._parse_response(response, frame.timestamp)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Timeout waiting for Gemini response for {self.table_id}")
             return None
         except Exception as e:
@@ -168,7 +167,7 @@ If nothing significant is detected, use event: "none" with low confidence."""
         self,
         response: str,
         timestamp: datetime,
-    ) -> Optional[AIVideoResult]:
+    ) -> AIVideoResult | None:
         """Parse Gemini API response into AIVideoResult."""
         try:
             data = json.loads(response)

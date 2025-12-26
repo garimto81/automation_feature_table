@@ -3,9 +3,9 @@
 import asyncio
 import logging
 from collections import deque
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import AsyncIterator, Optional
 
 import cv2
 import numpy as np
@@ -82,7 +82,7 @@ class VideoCapture:
             del self._buffers[table_id]
             logger.info(f"Removed stream for {table_id}")
 
-    def capture_frame(self, table_id: str) -> Optional[VideoFrame]:
+    def capture_frame(self, table_id: str) -> VideoFrame | None:
         """
         Capture a single frame from a stream.
 
@@ -122,7 +122,7 @@ class VideoCapture:
     async def stream_frames(
         self,
         table_id: str,
-        fps: Optional[int] = None,
+        fps: int | None = None,
     ) -> AsyncIterator[VideoFrame]:
         """
         Stream frames at specified FPS.
@@ -150,7 +150,7 @@ class VideoCapture:
 
     async def stream_all_tables(
         self,
-        fps: Optional[int] = None,
+        fps: int | None = None,
     ) -> AsyncIterator[VideoFrame]:
         """
         Stream frames from all registered tables.
@@ -187,13 +187,13 @@ class VideoCapture:
             self.remove_stream(table_id)
         logger.info("Released all video captures")
 
-    def get_latest_frame(self, table_id: str) -> Optional[VideoFrame]:
+    def get_latest_frame(self, table_id: str) -> VideoFrame | None:
         """Get the most recent frame from buffer."""
         if table_id in self._buffers and self._buffers[table_id]:
             return self._buffers[table_id][-1]
         return None
 
-    def get_stream_info(self, table_id: str) -> Optional[dict]:
+    def get_stream_info(self, table_id: str) -> dict | None:
         """Get information about a stream."""
         if table_id not in self._captures:
             return None

@@ -1,7 +1,6 @@
 """Application settings using pydantic-settings."""
 
 from functools import lru_cache
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,19 +39,59 @@ class VideoSettings(BaseSettings):
     buffer_size: int = Field(default=10, description="Frame buffer size")
 
 
-class Hand2NoteSettings(BaseSettings):
-    """Hand2Note integration configuration."""
+class DatabaseSettings(BaseSettings):
+    """PostgreSQL database configuration."""
 
-    enabled: bool = Field(default=True, alias="HAND2NOTE_ENABLED")
-    dll_path: Optional[str] = Field(default=None, description="Path to Hand2Note API DLL")
+    host: str = Field(default="localhost", alias="DB_HOST")
+    port: int = Field(default=5432, alias="DB_PORT")
+    database: str = Field(default="poker_hands", alias="DB_NAME")
+    username: str = Field(default="postgres", alias="DB_USER")
+    password: str = Field(default="", alias="DB_PASSWORD")
+    pool_size: int = Field(default=5, description="Connection pool size")
 
 
-class OutputSettings(BaseSettings):
-    """Output configuration."""
+class VMixSettings(BaseSettings):
+    """vMix API configuration."""
 
-    overlay_ws_port: int = Field(default=8081, alias="OVERLAY_WS_PORT")
-    clip_markers_path: str = Field(default="./output/markers", alias="CLIP_MARKERS_PATH")
-    edl_format: str = Field(default="cmx3600", description="EDL format: cmx3600, fcpxml")
+    host: str = Field(default="127.0.0.1", alias="VMIX_HOST")
+    port: int = Field(default=8088, alias="VMIX_PORT")
+    timeout: float = Field(default=5.0, description="API timeout in seconds")
+    auto_record: bool = Field(default=True, alias="VMIX_AUTO_RECORD")
+
+
+class RecordingSettings(BaseSettings):
+    """Recording configuration."""
+
+    output_path: str = Field(default="./recordings", alias="RECORDING_PATH")
+    format: str = Field(default="mp4", description="Output format")
+    max_duration_seconds: int = Field(default=600, description="Max recording duration")
+    min_duration_seconds: int = Field(default=10, description="Min duration to save")
+
+
+class GradingSettings(BaseSettings):
+    """Hand grading configuration."""
+
+    playtime_threshold: int = Field(
+        default=120, description="Long playtime threshold in seconds"
+    )
+    board_combo_threshold: int = Field(
+        default=7, description="Premium board combo rank threshold (1-7)"
+    )
+
+
+class FallbackSettings(BaseSettings):
+    """Fallback/Plan B configuration."""
+
+    enabled: bool = Field(default=True, alias="FALLBACK_ENABLED")
+    primary_timeout: int = Field(
+        default=30, description="Primary source timeout in seconds"
+    )
+    secondary_timeout: int = Field(
+        default=60, description="Secondary source timeout in seconds"
+    )
+    mismatch_threshold: int = Field(
+        default=3, description="Fusion mismatch count before fallback"
+    )
 
 
 class Settings(BaseSettings):
@@ -68,8 +107,11 @@ class Settings(BaseSettings):
     pokergfx: PokerGFXSettings = Field(default_factory=PokerGFXSettings)
     gemini: GeminiSettings = Field(default_factory=GeminiSettings)
     video: VideoSettings = Field(default_factory=VideoSettings)
-    hand2note: Hand2NoteSettings = Field(default_factory=Hand2NoteSettings)
-    output: OutputSettings = Field(default_factory=OutputSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    vmix: VMixSettings = Field(default_factory=VMixSettings)
+    recording: RecordingSettings = Field(default_factory=RecordingSettings)
+    grading: GradingSettings = Field(default_factory=GradingSettings)
+    fallback: FallbackSettings = Field(default_factory=FallbackSettings)
 
     # General settings
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")

@@ -1,11 +1,11 @@
 """Data models for poker hand processing."""
 
 from src.models.hand import (
+    AIVideoResult,
     Card,
+    FusedHandResult,
     HandAction,
     HandResult,
-    AIVideoResult,
-    FusedHandResult,
     PlayerInfo,
     SourceType,
 )

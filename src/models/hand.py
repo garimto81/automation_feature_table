@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class SourceType(Enum):
@@ -115,7 +114,7 @@ class HandResult:
     pot_size: int
     timestamp: datetime
     community_cards: list[Card] = field(default_factory=list)
-    winner: Optional[str] = None
+    winner: str | None = None
 
     @property
     def rank_name(self) -> str:
@@ -130,13 +129,13 @@ class AIVideoResult:
     table_id: str
     detected_event: str  # hand_start, hand_end, showdown, all_in
     detected_cards: list[Card]
-    hand_rank: Optional[HandRank]
+    hand_rank: HandRank | None
     confidence: float  # 0.0 - 1.0
     context: str  # AI-generated game situation description
     timestamp: datetime
 
     @property
-    def rank_name(self) -> Optional[str]:
+    def rank_name(self) -> str | None:
         """Get human-readable rank name."""
         return self.hand_rank.display_name if self.hand_rank else None
 
@@ -150,8 +149,8 @@ class FusedHandResult:
     hand_rank: HandRank
     confidence: float
     source: SourceType
-    primary_result: Optional[HandResult]
-    secondary_result: Optional[AIVideoResult]
+    primary_result: HandResult | None
+    secondary_result: AIVideoResult | None
     cross_validated: bool
     requires_review: bool
     timestamp: datetime

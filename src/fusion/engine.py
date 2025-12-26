@@ -1,8 +1,8 @@
 """Fusion Engine for combining Primary and Secondary results."""
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
 
 from src.models.hand import (
     AIVideoResult,
@@ -29,7 +29,7 @@ class FusionEngine:
     def __init__(
         self,
         secondary_confidence_threshold: float = 0.80,
-        on_result: Optional[Callable[[FusedHandResult], None]] = None,
+        on_result: Callable[[FusedHandResult], None] | None = None,
     ):
         self.secondary_confidence_threshold = secondary_confidence_threshold
         self._on_result = on_result
@@ -44,8 +44,8 @@ class FusionEngine:
 
     def fuse(
         self,
-        primary: Optional[HandResult],
-        secondary: Optional[AIVideoResult],
+        primary: HandResult | None,
+        secondary: AIVideoResult | None,
     ) -> FusedHandResult:
         """
         Fuse Primary and Secondary results.
@@ -143,7 +143,7 @@ class FusionEngine:
     def _cross_validate(
         self,
         primary: HandResult,
-        secondary: Optional[AIVideoResult],
+        secondary: AIVideoResult | None,
     ) -> bool:
         """
         Cross-validate Primary and Secondary results.
@@ -208,8 +208,8 @@ class MultiTableFusionEngine:
     def fuse(
         self,
         table_id: str,
-        primary: Optional[HandResult],
-        secondary: Optional[AIVideoResult],
+        primary: HandResult | None,
+        secondary: AIVideoResult | None,
     ) -> FusedHandResult:
         """Fuse results for a specific table."""
         if table_id not in self.engines:

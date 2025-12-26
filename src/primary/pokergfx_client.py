@@ -3,14 +3,14 @@
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
-from typing import AsyncIterator, Callable, Optional
 
 import websockets
 from websockets.exceptions import ConnectionClosed
 
 from src.config.settings import PokerGFXSettings
-from src.models.hand import Card, HandAction, HandResult, PlayerInfo
+from src.models.hand import Card, HandResult, PlayerInfo
 from src.primary.hand_classifier import HandClassifier
 
 logger = logging.getLogger(__name__)
@@ -22,11 +22,11 @@ class PokerGFXClient:
     def __init__(
         self,
         settings: PokerGFXSettings,
-        classifier: Optional[HandClassifier] = None,
+        classifier: HandClassifier | None = None,
     ):
         self.settings = settings
         self.classifier = classifier or HandClassifier()
-        self._ws: Optional[websockets.WebSocketClientProtocol] = None
+        self._ws: websockets.WebSocketClientProtocol | None = None
         self._running = False
         self._handlers: list[Callable[[HandResult], None]] = []
 
@@ -69,7 +69,7 @@ class PokerGFXClient:
 
         return False
 
-    def _parse_hand_event(self, data: dict) -> Optional[HandResult]:
+    def _parse_hand_event(self, data: dict) -> HandResult | None:
         """Parse PokerGFX JSON event into HandResult."""
         try:
             event_type = data.get("event")
