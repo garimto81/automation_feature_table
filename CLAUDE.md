@@ -55,7 +55,10 @@ Primary (PokerGFX)  +  Secondary (Gemini AI)
                 ↓
          FusionEngine (cross-validation)
                 ↓
-         Output (Overlay + ClipMarker)
+    ┌───────────┼───────────┐
+    ↓           ↓           ↓
+Database    Grading    Recording
+(PostgreSQL) (A/B/C)   (vMix)
 ```
 
 ### 핵심 컴포넌트
@@ -67,8 +70,11 @@ Primary (PokerGFX)  +  Secondary (Gemini AI)
 | `src/secondary/gemini_live.py` | Gemini Live API로 비디오 스트림 분석 |
 | `src/secondary/video_capture.py` | RTSP 스트림 캡처 (OpenCV) |
 | `src/fusion/engine.py` | Primary/Secondary 결과 융합 및 cross-validation |
-| `src/output/overlay.py` | WebSocket 서버로 방송용 오버레이 전송 |
-| `src/output/clip_marker.py` | EDL/FCPXML/JSON 편집점 마커 생성 |
+| `src/grading/grader.py` | 핸드 A/B/C 등급 분류 |
+| `src/database/` | PostgreSQL ORM 모델, 연결, 저장소 |
+| `src/recording/` | vMix 녹화 세션 관리 |
+| `src/vmix/client.py` | vMix HTTP API 클라이언트 |
+| `src/fallback/` | 장애 감지 및 수동 마킹 폴백
 
 ### Fusion 결정 로직
 
@@ -94,7 +100,9 @@ Primary (PokerGFX)  +  Secondary (Gemini AI)
 | `POKERGFX_API_URL` | PokerGFX WebSocket URL |
 | `GEMINI_API_KEY` | Gemini API 키 |
 | `VIDEO_STREAMS` | RTSP 스트림 URL (쉼표 구분) |
-| `OVERLAY_WS_PORT` | 오버레이 WebSocket 포트 |
+| `DB_HOST`, `DB_NAME` | PostgreSQL 데이터베이스 |
+| `VMIX_HOST`, `VMIX_PORT` | vMix HTTP API 연결 |
+| `VMIX_AUTO_RECORD` | 자동 녹화 활성화 |
 
 ## 핸드 등급 기준 (A~C)
 
