@@ -29,9 +29,11 @@ class FusionEngine:
     def __init__(
         self,
         secondary_confidence_threshold: float = 0.80,
+        timestamp_tolerance_seconds: float = 10.0,
         on_result: Callable[[FusedHandResult], None] | None = None,
     ):
         self.secondary_confidence_threshold = secondary_confidence_threshold
+        self.timestamp_tolerance_seconds = timestamp_tolerance_seconds
         self._on_result = on_result
         self._stats = {
             "total": 0,
@@ -89,15 +91,17 @@ class FusionEngine:
             )
 
         # Case 3: Primary unavailable, Secondary available
-        elif secondary and secondary.confidence >= self.secondary_confidence_threshold:
+        elif (
+            secondary
+            and secondary.confidence >= self.secondary_confidence_threshold
+            and secondary.hand_rank is not None
+        ):
             self._stats["secondary_fallback"] += 1
-
-            hand_rank = secondary.hand_rank or HandRank.HIGH_CARD
 
             result = FusedHandResult(
                 table_id=secondary.table_id,
                 hand_number=-1,  # Unknown from video
-                hand_rank=hand_rank,
+                hand_rank=secondary.hand_rank,
                 confidence=secondary.confidence,
                 source=SourceType.SECONDARY,
                 primary_result=None,
@@ -150,7 +154,7 @@ class FusionEngine:
 
         Returns True if:
         - Secondary is not available (no conflict)
-        - Secondary hand rank matches Primary
+        - Secondary hand rank matches Primary AND timestamps are synchronized
         """
         if not secondary:
             return True
@@ -158,15 +162,35 @@ class FusionEngine:
         if not secondary.hand_rank:
             return True
 
+        # Check timestamp synchronization
+        time_diff = abs((primary.timestamp - secondary.timestamp).total_seconds())
+        timestamps_synced = time_diff <= self.timestamp_tolerance_seconds
+
         # Compare hand ranks
-        if primary.hand_rank == secondary.hand_rank:
+        ranks_match = primary.hand_rank == secondary.hand_rank
+
+        if ranks_match and timestamps_synced:
+            logger.debug(
+                f"Cross-validation SUCCESS: "
+                f"rank={primary.hand_rank.display_name}, "
+                f"time_diff={time_diff:.1f}s"
+            )
             return True
 
-        # Log mismatch for debugging
-        logger.debug(
-            f"Hand rank mismatch: Primary={primary.hand_rank.display_name}, "
-            f"Secondary={secondary.hand_rank.display_name}"
-        )
+        # Log mismatch details for debugging
+        if not ranks_match:
+            logger.warning(
+                f"Hand rank MISMATCH: "
+                f"Primary={primary.hand_rank.display_name}, "
+                f"Secondary={secondary.hand_rank.display_name}, "
+                f"time_diff={time_diff:.1f}s"
+            )
+
+        if not timestamps_synced:
+            logger.warning(
+                f"Timestamp OUT OF SYNC: "
+                f"time_diff={time_diff:.1f}s (tolerance={self.timestamp_tolerance_seconds}s)"
+            )
 
         return False
 
@@ -197,12 +221,14 @@ class MultiTableFusionEngine:
         self,
         table_ids: list[str],
         secondary_confidence_threshold: float = 0.80,
+        timestamp_tolerance_seconds: float = 10.0,
     ):
         self.engines: dict[str, FusionEngine] = {}
 
         for table_id in table_ids:
             self.engines[table_id] = FusionEngine(
-                secondary_confidence_threshold=secondary_confidence_threshold
+                secondary_confidence_threshold=secondary_confidence_threshold,
+                timestamp_tolerance_seconds=timestamp_tolerance_seconds,
             )
 
     def fuse(
@@ -213,7 +239,11 @@ class MultiTableFusionEngine:
     ) -> FusedHandResult:
         """Fuse results for a specific table."""
         if table_id not in self.engines:
-            self.engines[table_id] = FusionEngine()
+            # Create engine with default settings if table_id not pre-registered
+            self.engines[table_id] = FusionEngine(
+                secondary_confidence_threshold=0.80,
+                timestamp_tolerance_seconds=10.0,
+            )
 
         return self.engines[table_id].fuse(primary, secondary)
 

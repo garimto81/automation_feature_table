@@ -143,6 +143,125 @@ class TestFusionEngine:
         assert stats["cross_validated"] == 1
         assert stats["review_flagged"] == 1
 
+    def test_timestamp_validation(self, fusion_engine):
+        """Test timestamp-based synchronization between Primary and Secondary."""
+        from datetime import timedelta
+
+        base_time = datetime.now()
+
+        primary = HandResult(
+            table_id="table_1",
+            hand_number=100,
+            hand_rank=HandRank.FLUSH,
+            rank_value=300,
+            is_premium=False,
+            confidence=1.0,
+            players_showdown=[],
+            pot_size=1000,
+            timestamp=base_time,
+        )
+
+        # Secondary result within acceptable time window (5 seconds)
+        secondary_in_sync = AIVideoResult(
+            table_id="table_1",
+            detected_event="showdown",
+            detected_cards=[],
+            hand_rank=HandRank.FLUSH,
+            confidence=0.88,
+            context="Synchronized detection",
+            timestamp=base_time + timedelta(seconds=3),
+        )
+
+        result = fusion_engine.fuse(primary, secondary_in_sync)
+        assert result.cross_validated is True
+
+        # Secondary result out of sync (20 seconds delay)
+        secondary_out_of_sync = AIVideoResult(
+            table_id="table_1",
+            detected_event="showdown",
+            detected_cards=[],
+            hand_rank=HandRank.FLUSH,
+            confidence=0.88,
+            context="Delayed detection",
+            timestamp=base_time + timedelta(seconds=20),
+        )
+
+        result_delayed = fusion_engine.fuse(primary, secondary_out_of_sync)
+        # Should still use primary but flag for review due to timing mismatch
+        assert result_delayed.source == SourceType.PRIMARY
+        assert result_delayed.requires_review is True
+
+    def test_secondary_without_hand_rank(self, fusion_engine):
+        """Test Case 3: Secondary result without hand_rank should fallback to MANUAL."""
+        secondary_no_rank = AIVideoResult(
+            table_id="table_1",
+            detected_event="action",
+            detected_cards=[],
+            hand_rank=None,  # AI couldn't determine rank
+            confidence=0.95,  # High confidence but no rank
+            context="Player action detected",
+            timestamp=datetime.now(),
+        )
+
+        result = fusion_engine.fuse(None, secondary_no_rank)
+
+        # Should require manual review despite high confidence
+        assert result.source == SourceType.MANUAL
+        assert result.requires_review is True
+
+    def test_result_handler_callback(self):
+        """Test that result handler is called correctly."""
+        results = []
+
+        def handler(fused_result):
+            results.append(fused_result)
+
+        engine = FusionEngine(on_result=handler)
+
+        primary = HandResult(
+            table_id="table_1",
+            hand_number=50,
+            hand_rank=HandRank.TWO_PAIR,
+            rank_value=500,
+            is_premium=False,
+            confidence=1.0,
+            players_showdown=[],
+            pot_size=800,
+            timestamp=datetime.now(),
+        )
+
+        engine.fuse(primary, None)
+
+        assert len(results) == 1
+        assert results[0].hand_rank == HandRank.TWO_PAIR
+
+    def test_result_handler_exception(self, caplog):
+        """Test that exceptions in result handler are logged and don't crash."""
+
+        def failing_handler(fused_result):
+            raise ValueError("Handler error")
+
+        engine = FusionEngine(on_result=failing_handler)
+
+        primary = HandResult(
+            table_id="table_1",
+            hand_number=60,
+            hand_rank=HandRank.STRAIGHT,
+            rank_value=400,
+            is_premium=False,
+            confidence=1.0,
+            players_showdown=[],
+            pot_size=1200,
+            timestamp=datetime.now(),
+        )
+
+        # Should not raise exception
+        result = engine.fuse(primary, None)
+
+        assert result is not None
+        # Check that error was logged
+        assert any("Error in result handler" in rec.message for rec in caplog.records)
+
 
 class TestMultiTableFusionEngine:
     """Test MultiTableFusionEngine."""

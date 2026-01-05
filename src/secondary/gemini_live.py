@@ -59,41 +59,65 @@ If nothing significant is detected, use event: "none" with low confidence."""
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._running = False
         self._session_start: datetime | None = None
+        self._retry_count = 0
+        self._max_retries = 3
 
     async def connect(self) -> None:
-        """Establish WebSocket connection to Gemini Live API."""
+        """Establish WebSocket connection to Gemini Live API with retry."""
         url = f"{self.settings.ws_url}?key={self.settings.api_key}"
         logger.info(f"Connecting to Gemini Live API for {self.table_id}")
 
-        try:
-            self._ws = await websockets.connect(url)
+        last_error = None
 
-            # Send setup message
-            setup_msg = {
-                "setup": {
-                    "model": f"models/{self.settings.model}",
-                    "generation_config": {
-                        "response_modalities": ["TEXT"],
-                        "temperature": 0.1,  # Low temperature for consistent detection
-                    },
-                    "system_instruction": {
-                        "parts": [{"text": self.SYSTEM_PROMPT}]
-                    },
+        while self._retry_count < self._max_retries:
+            try:
+                self._ws = await websockets.connect(url)
+
+                # Send setup message
+                setup_msg = {
+                    "setup": {
+                        "model": f"models/{self.settings.model}",
+                        "generation_config": {
+                            "response_modalities": ["TEXT"],
+                            "temperature": 0.1,  # Low temperature for consistent detection
+                        },
+                        "system_instruction": {
+                            "parts": [{"text": self.SYSTEM_PROMPT}]
+                        },
+                    }
                 }
-            }
 
-            await self._ws.send(json.dumps(setup_msg))
+                await self._ws.send(json.dumps(setup_msg))
 
-            # Wait for setup confirmation
-            response = await self._ws.recv()
-            logger.debug(f"Setup response: {response}")
+                # Wait for setup confirmation
+                response = await self._ws.recv()
+                logger.debug(f"Setup response: {response}")
 
-            self._session_start = datetime.now()
-            logger.info(f"Connected to Gemini Live API for {self.table_id}")
+                self._session_start = datetime.now()
+                logger.info(f"Connected to Gemini Live API for {self.table_id}")
 
-        except Exception as e:
-            logger.error(f"Failed to connect to Gemini Live API: {e}")
-            raise
+                # Reset retry count on success
+                self._retry_count = 0
+                return
+
+            except Exception as e:
+                last_error = e
+                self._retry_count += 1
+
+                if self._retry_count < self._max_retries:
+                    delay = self._get_backoff_delay()
+                    logger.warning(
+                        f"Connection failed "
+                        f"(attempt {self._retry_count}/{self._max_retries}): {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"Failed to connect after {self._max_retries} attempts: {e}")
+
+        # All retries exhausted
+        if last_error:
+            raise last_error
 
     async def disconnect(self) -> None:
         """Close WebSocket connection."""
@@ -111,6 +135,16 @@ If nothing significant is detected, use event: "none" with low confidence."""
         elapsed = (datetime.now() - self._session_start).total_seconds()
         # Reconnect 30 seconds before timeout
         return elapsed >= (self.settings.session_timeout - 30)
+
+    def _get_backoff_delay(self) -> float:
+        """
+        Calculate exponential backoff delay.
+
+        Returns:
+            Delay in seconds (1, 2, 4, 8 max)
+        """
+        delay = min(2 ** self._retry_count, 8.0)
+        return delay
 
     async def _ensure_connection(self) -> None:
         """Ensure connection is active, reconnect if needed."""
@@ -132,8 +166,8 @@ If nothing significant is detected, use event: "none" with low confidence."""
         await self._ensure_connection()
 
         try:
-            # Encode frame to base64 JPEG
-            jpeg_bytes = frame.to_jpeg(quality=self.settings.confidence_threshold)
+            # Encode frame to base64 JPEG (quality 80 for balance)
+            jpeg_bytes = frame.to_jpeg(quality=80)
             frame_b64 = base64.b64encode(jpeg_bytes).decode("utf-8")
 
             # Send frame for analysis

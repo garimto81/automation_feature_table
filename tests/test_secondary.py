@@ -17,12 +17,13 @@ mock_cv2.CAP_PROP_FRAME_WIDTH = 3
 mock_cv2.CAP_PROP_FRAME_HEIGHT = 4
 mock_cv2.CAP_PROP_FPS = 5
 mock_cv2.IMWRITE_JPEG_QUALITY = 1
-mock_cv2.imencode = MagicMock(return_value=(True, np.array([0xFF, 0xD8, 0xFF, 0xE0], dtype=np.uint8)))
+mock_cv2.imencode = MagicMock(
+    return_value=(True, np.array([0xFF, 0xD8, 0xFF, 0xE0], dtype=np.uint8))
+)
 sys.modules["cv2"] = mock_cv2
 
-from src.models.hand import AIVideoResult, Card, HandRank
-from src.secondary.video_capture import VideoCapture, VideoFrame
-
+from src.models.hand import AIVideoResult, Card, HandRank  # noqa: E402
+from src.secondary.video_capture import VideoCapture, VideoFrame  # noqa: E402
 
 # ============================================================================
 # Mock Classes
@@ -300,6 +301,38 @@ class TestVideoCapture:
 
         assert info is None
 
+    def test_resize_frame(self, video_settings):
+        """Test frame resizing for optimization."""
+        capture = VideoCapture(video_settings)
+
+        # Create 1920x1080 frame
+        large_frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+        # Mock cv2.resize to return correctly sized frame
+        resized_frame = np.zeros((360, 640, 3), dtype=np.uint8)
+
+        with patch("cv2.resize", return_value=resized_frame) as mock_resize:
+            resized = capture._resize_frame(large_frame, target_width=640)
+
+            assert resized.shape[1] == 640
+            assert resized.shape[0] == 360
+            mock_resize.assert_called_once()
+
+    def test_resize_frame_already_small(self, video_settings):
+        """Test that small frames are not upscaled."""
+        capture = VideoCapture(video_settings)
+
+        # Create 320x180 frame
+        small_frame = np.zeros((180, 320, 3), dtype=np.uint8)
+
+        # Should return original (no resize call)
+        with patch("cv2.resize") as mock_resize:
+            resized = capture._resize_frame(small_frame, target_width=640)
+
+            assert resized.shape[1] == 320
+            assert resized.shape[0] == 180
+            mock_resize.assert_not_called()
+
 
 # ============================================================================
 # GeminiLiveProcessor Tests
@@ -325,6 +358,8 @@ class TestGeminiLiveProcessor:
         assert processor.table_id == "table_1"
         assert processor._ws is None
         assert processor._running is False
+        assert processor._retry_count == 0
+        assert processor._max_retries == 3
 
     def test_system_prompt_exists(self, gemini_settings):
         """Test that system prompt is defined."""
@@ -363,6 +398,68 @@ class TestGeminiLiveProcessor:
         processor._session_start = datetime.now()
 
         assert processor._should_reconnect() is False
+
+    def test_exponential_backoff_calculation(self, gemini_settings):
+        """Test exponential backoff delay calculation."""
+        from src.secondary.gemini_live import GeminiLiveProcessor
+
+        processor = GeminiLiveProcessor(gemini_settings, "table_1")
+
+        # Test backoff progression: 1s, 2s, 4s
+        processor._retry_count = 0
+        assert processor._get_backoff_delay() == 1.0
+
+        processor._retry_count = 1
+        assert processor._get_backoff_delay() == 2.0
+
+        processor._retry_count = 2
+        assert processor._get_backoff_delay() == 4.0
+
+        # Max cap at 8 seconds
+        processor._retry_count = 5
+        assert processor._get_backoff_delay() == 8.0
+
+    async def test_connect_with_retry_success(self, gemini_settings):
+        """Test connection with retry on first failure."""
+        from src.secondary.gemini_live import GeminiLiveProcessor
+
+        processor = GeminiLiveProcessor(gemini_settings, "table_1")
+
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value='{"setupComplete": true}')
+
+        call_count = 0
+
+        async def mock_connect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("Connection failed")
+            return mock_ws
+
+        with patch("websockets.connect", side_effect=mock_connect):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await processor.connect()
+
+                assert processor._ws is not None
+                assert processor._retry_count == 0  # Reset on success
+                assert call_count == 2  # Two attempts made
+
+    async def test_connect_retry_exhaustion(self, gemini_settings):
+        """Test connection fails after max retries."""
+        from src.secondary.gemini_live import GeminiLiveProcessor
+
+        processor = GeminiLiveProcessor(gemini_settings, "table_1")
+
+        async def mock_connect(*args, **kwargs):
+            raise Exception("Connection failed")
+
+        with patch("websockets.connect", side_effect=mock_connect):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                with pytest.raises(Exception, match="Connection failed"):
+                    await processor.connect()
+
+                assert processor._retry_count == 3  # Max retries reached
 
     def test_parse_response_valid_json(self, gemini_settings):
         """Test parsing a valid Gemini response."""

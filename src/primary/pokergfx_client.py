@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from datetime import datetime
 
 import websockets
@@ -14,6 +15,20 @@ from src.models.hand import Card, HandResult, PlayerInfo
 from src.primary.hand_classifier import HandClassifier
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class HandSession:
+    """Track hand session state for a table."""
+
+    table_id: str
+    hand_number: int
+    start_time: datetime
+    dealer_seat: int | None = None
+    small_blind: int | None = None
+    big_blind: int | None = None
+    end_time: datetime | None = None
+    completed: bool = False
 
 
 class PokerGFXClient:
@@ -29,6 +44,7 @@ class PokerGFXClient:
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._running = False
         self._handlers: list[Callable[[HandResult], None]] = []
+        self._active_sessions: dict[str, HandSession] = {}  # table_id -> session
 
     async def connect(self) -> None:
         """Establish WebSocket connection to PokerGFX."""
@@ -69,10 +85,87 @@ class PokerGFXClient:
 
         return False
 
+    def _validate_cards(self, players: list[dict], community_cards: list[Card]) -> bool:
+        """Validate that all cards are unique (no duplicates in 52-card deck)."""
+        seen_cards = set()
+
+        # Check community cards
+        for card in community_cards:
+            card_str = str(card)
+            if card_str in seen_cards:
+                logger.error(f"Duplicate card detected in community: {card_str}")
+                return False
+            seen_cards.add(card_str)
+
+        # Check player hole cards
+        for player in players:
+            hole_cards = player.get("hole_cards", [])
+            for card in hole_cards:
+                card_str = str(card)
+                if card_str in seen_cards:
+                    logger.error(
+                        f"Duplicate card detected for {player.get('name')}: {card_str}"
+                    )
+                    return False
+                seen_cards.add(card_str)
+
+        return True
+
+    def _handle_hand_start(self, data: dict) -> None:
+        """Handle hand_start event - track session."""
+        table_id = data.get("table_id", "unknown")
+        hand_number = data.get("hand_number", 0)
+        timestamp = datetime.fromisoformat(
+            data.get("timestamp", datetime.now().isoformat())
+        )
+
+        session = HandSession(
+            table_id=table_id,
+            hand_number=hand_number,
+            start_time=timestamp,
+            dealer_seat=data.get("dealer_seat"),
+            small_blind=data.get("small_blind"),
+            big_blind=data.get("big_blind"),
+        )
+
+        self._active_sessions[table_id] = session
+        logger.info(
+            f"Hand #{hand_number} started on {table_id} "
+            f"(BB: {session.big_blind})"
+        )
+
+    def _handle_hand_end(self, data: dict) -> None:
+        """Handle hand_end event - mark session complete."""
+        table_id = data.get("table_id", "unknown")
+        hand_number = data.get("hand_number", 0)
+        timestamp = datetime.fromisoformat(
+            data.get("timestamp", datetime.now().isoformat())
+        )
+
+        session = self._active_sessions.get(table_id)
+        if session and session.hand_number == hand_number:
+            session.end_time = timestamp
+            session.completed = True
+            duration = (timestamp - session.start_time).total_seconds()
+            logger.info(
+                f"Hand #{hand_number} ended on {table_id} "
+                f"(duration: {duration:.1f}s, winner: {data.get('winner')})"
+            )
+
     def _parse_hand_event(self, data: dict) -> HandResult | None:
         """Parse PokerGFX JSON event into HandResult."""
         try:
             event_type = data.get("event")
+
+            # Handle hand_start event
+            if event_type == "hand_start":
+                self._handle_hand_start(data)
+                return None
+
+            # Handle hand_end event
+            if event_type == "hand_end":
+                self._handle_hand_end(data)
+                return None
 
             # Only process completed hands
             if event_type != "hand_complete":
@@ -93,6 +186,11 @@ class PokerGFXClient:
             community_cards = [
                 Card.from_string(c) for c in data.get("community_cards", [])
             ]
+
+            # Validate no duplicate cards
+            if not self._validate_cards(players, community_cards):
+                logger.error(f"Invalid hand #{data.get('hand_number')}: duplicate cards")
+                return None
 
             # Find best hand and classify
             best = self.classifier.find_best_hand(players, community_cards)

@@ -40,6 +40,7 @@ class VideoCapture:
         self._running = False
         self._frame_counts: dict[str, int] = {}
         self._buffers: dict[str, deque] = {}
+        self._target_width = 640  # Optimize for API cost/quality balance
 
     def add_stream(self, table_id: str, url: str) -> bool:
         """
@@ -82,6 +83,41 @@ class VideoCapture:
             del self._buffers[table_id]
             logger.info(f"Removed stream for {table_id}")
 
+    def _resize_frame(
+        self,
+        frame: np.ndarray,
+        target_width: int | None = None
+    ) -> np.ndarray:
+        """
+        Resize frame for optimization (only downscale, never upscale).
+
+        Args:
+            frame: Input frame
+            target_width: Target width (default: 640)
+
+        Returns:
+            Resized frame or original if already smaller
+        """
+        target_width = target_width or self._target_width
+        height, width = frame.shape[:2]
+
+        # Don't upscale
+        if width <= target_width:
+            return frame
+
+        # Calculate new dimensions maintaining aspect ratio
+        scale = target_width / width
+        new_height = int(height * scale)
+
+        # Resize with high-quality interpolation
+        resized = cv2.resize(
+            frame,
+            (target_width, new_height),
+            interpolation=cv2.INTER_AREA
+        )
+
+        return resized
+
     def capture_frame(self, table_id: str) -> VideoFrame | None:
         """
         Capture a single frame from a stream.
@@ -102,6 +138,9 @@ class VideoCapture:
         if not ret:
             logger.warning(f"Failed to read frame from {table_id}")
             return None
+
+        # Resize frame for optimization
+        frame = self._resize_frame(frame)
 
         self._frame_counts[table_id] += 1
 
