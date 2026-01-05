@@ -106,12 +106,14 @@ PokerGFX.io 솔루션을 사용하는 포커 프로덕션 환경에서 여러 �
 
 두 개의 필터를 **완전히 분리**하여 독립적으로 분석합니다.
 
-| Filter | 소스 | 역할 |
-|--------|------|------|
-| **Filter 1** | GFX 분석 | PokerGFX RFID, JSON Hand Events (99.9% 정확도) |
-| **Filter 2** | Live API 분석 | Gemini Live API, AI Video Inference (Real-time) |
+| Filter | 소스 | 역할 | 협의 담당 |
+|--------|------|------|----------|
+| **Filter 1** | GFX 분석 | PokerGFX RFID, JSON Hand Events (99.9% 정확도) | **기술팀** |
+| **Filter 2** | Live API 분석 | Gemini Live API, AI Video Inference (Real-time) | **ATI 팀** |
 
 > 두 필터는 완전 분리되어 독립적으로 동작하며, Fusion Engine에서 조합하여 추론합니다.
+>
+> **협의 체계**: GFX 관련 사항은 **기술팀**, Live API 관련 사항은 **ATI 팀**과 협의하여 처리합니다.
 
 ![2중 안정성 아키텍처](../../docs/images/architecture.png)
 
@@ -134,8 +136,11 @@ PokerGFX RFID 시스템에서 JSON 데이터를 수신하여 phevaluator 라이�
 | **신뢰도** | 85-95% (조명, 각도에 따라 변동) |
 | **지연시간** | 1-3초 (1 FPS 샘플링) |
 | **용도** | Primary 백업 + 맥락적 이벤트 감지 |
+| **협의 담당** | **ATI 팀** |
 
 Gemini Live API를 통해 비디오 스트림을 실시간 분석하여 핸드를 감지합니다.
+
+![Secondary Layer - Gemini Live API](../../docs/images/live-api-architecture.png)
 
 > **기술 상세**: [PRD-0003: Secondary Layer - Gemini Live API](./PRD-0003-secondary-gemini-live.md)
 
@@ -353,13 +358,15 @@ Primary와 Secondary 중 **하나를 선택하는 것이 아니라**, 두 검증
 ## 8. 다음 단계 (액션 아이템)
 
 ### 즉시 필요
-1. **PokerGFX 기술지원 연락**
+1. **PokerGFX 기술지원 연락** (담당: **기술팀**)
    - JSON API 문서 요청
    - 멀티테이블 이벤트 스트림 구조 확인
+   - GFX 분석 관련 기술 협의
 
-2. **Gemini API 키 발급**
+2. **Gemini API 키 발급** (담당: **ATI 팀**)
    - Google AI Studio 또는 Vertex AI
    - Live API 접근 권한 확인
+   - AI Video 분석 관련 협의
 
 ### 기술 검증
 3. **PoC 개발**
