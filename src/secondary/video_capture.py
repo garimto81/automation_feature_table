@@ -101,8 +101,6 @@ class VideoCapture:
 
         if not ret:
             logger.warning(f"Failed to read frame from {table_id}")
-            # Try to reconnect
-            url = cap.get(cv2.CAP_PROP_POS_AVI_RATIO)  # Store URL somehow
             return None
 
         self._frame_counts[table_id] += 1

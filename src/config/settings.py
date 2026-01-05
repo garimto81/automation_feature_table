@@ -27,7 +27,9 @@ class GeminiSettings(BaseSettings):
         default="wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent"
     )
     session_timeout: int = Field(default=600, description="Session timeout in seconds (max 10min)")
-    confidence_threshold: float = Field(default=0.80, description="Minimum confidence for secondary")
+    confidence_threshold: float = Field(
+        default=0.80, description="Minimum confidence for secondary"
+    )
 
 
 class VideoSettings(BaseSettings):

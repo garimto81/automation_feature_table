@@ -31,7 +31,8 @@ class DatabaseManager:
 
     async def connect(self) -> None:
         """Initialize database connection."""
-        logger.info(f"Connecting to database: {self.settings.host}:{self.settings.port}/{self.settings.database}")
+        db_info = f"{self.settings.host}:{self.settings.port}/{self.settings.database}"
+        logger.info(f"Connecting to database: {db_info}")
 
         self._engine = create_async_engine(
             self.connection_string,

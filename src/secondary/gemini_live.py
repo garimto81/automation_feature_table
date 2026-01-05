@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 class GeminiLiveProcessor:
     """Real-time video analysis using Gemini Live API."""
 
-    SYSTEM_PROMPT = """You are a professional poker broadcast analyzer. Analyze each video frame and detect:
+    SYSTEM_PROMPT = """You are a professional poker broadcast analyzer. \
+Analyze each video frame and detect:
 
 1. HAND BOUNDARIES:
    - hand_start: New cards being dealt, players receiving hole cards
@@ -37,7 +38,8 @@ class GeminiLiveProcessor:
 
 4. HAND RANKING:
    - When cards are visible, identify the poker hand rank
-   - Royal Flush, Straight Flush, Four of a Kind, Full House, Flush, Straight, Three of a Kind, Two Pair, One Pair, High Card
+   - Royal Flush, Straight Flush, Four of a Kind, Full House, Flush, Straight, \
+Three of a Kind, Two Pair, One Pair, High Card
 
 IMPORTANT: Respond ONLY with valid JSON in this exact format:
 {

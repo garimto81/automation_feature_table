@@ -35,14 +35,22 @@ class HandRepository:
                 hand_number=result.hand_number,
                 started_at=result.timestamp,
                 ended_at=datetime.utcnow(),
-                community_cards=[str(c) for c in result.community_cards] if result.community_cards else None,
+                community_cards=(
+                    [str(c) for c in result.community_cards]
+                    if result.community_cards
+                    else None
+                ),
                 players_data=result.players_data if hasattr(result, "players_data") else None,
                 hand_rank=result.rank_name,
                 rank_value=result.rank_value,
                 is_premium=result.is_premium,
                 source=result.source.value,
-                primary_confidence=result.confidence if result.source.value == "primary" else None,
-                secondary_confidence=result.confidence if result.source.value == "secondary" else None,
+                primary_confidence=(
+                    result.confidence if result.source.value == "primary" else None
+                ),
+                secondary_confidence=(
+                    result.confidence if result.source.value == "secondary" else None
+                ),
                 cross_validated=result.cross_validated,
                 requires_review=result.requires_review,
             )

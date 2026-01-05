@@ -32,22 +32,68 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
+try:
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    GOOGLE_API_AVAILABLE = True
+except ImportError:
+    GOOGLE_API_AVAILABLE = False
+    Credentials = None
+    InstalledAppFlow = None
+    Request = None
+    build = None
 
-# Notion 스타일 시스템 import
+# Notion 스타일 시스템 import (optional - parent project의 lib 사용)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from lib.google_docs.notion_style import (
-    NOTION_COLORS,
-    NOTION_FONTS,
-    NOTION_TYPOGRAPHY,
-    SECTION_ICONS,
-    NotionStyle,
-    get_default_style,
-)
-from lib.google_docs.image_inserter import ImageInserter
+try:
+    from lib.google_docs.notion_style import (
+        NOTION_COLORS,
+        NOTION_FONTS,
+        NOTION_TYPOGRAPHY,
+        SECTION_ICONS,
+        NotionStyle,
+        get_default_style,
+    )
+    from lib.google_docs.image_inserter import ImageInserter
+    NOTION_STYLE_AVAILABLE = True
+except ImportError:
+    # Fallback: 기본 스타일 정의 (테스트용)
+    NOTION_STYLE_AVAILABLE = False
+    ImageInserter = None
+    NOTION_TYPOGRAPHY = None
+    SECTION_ICONS = {}
+    NotionStyle = None
+
+    # 기본 색상 정의
+    NOTION_COLORS = {
+        'heading_primary': {'red': 0.1, 'green': 0.1, 'blue': 0.1},
+        'heading_secondary': {'red': 0.2, 'green': 0.2, 'blue': 0.2},
+        'text_primary': {'red': 0.13, 'green': 0.13, 'blue': 0.13},
+        'text_secondary': {'red': 0.4, 'green': 0.4, 'blue': 0.4},
+        'text_muted': {'red': 0.6, 'green': 0.6, 'blue': 0.6},
+        'blue': {'red': 0.09, 'green': 0.45, 'blue': 0.8},
+        'border': {'red': 0.9, 'green': 0.9, 'blue': 0.9},
+        'code_bg': {'red': 0.97, 'green': 0.97, 'blue': 0.97},
+        'code_text': {'red': 0.8, 'green': 0.2, 'blue': 0.2},
+        'highlight_blue': {'red': 0.9, 'green': 0.95, 'blue': 1.0},
+        'background_gray': {'red': 0.98, 'green': 0.98, 'blue': 0.98},
+        'table_header_bg': {'red': 0.95, 'green': 0.95, 'blue': 0.95},
+    }
+
+    NOTION_FONTS = {
+        'heading': 'Arial',
+        'body': 'Arial',
+        'code': 'Consolas',
+    }
+
+    def get_default_style():
+        """Return a mock style object."""
+        class MockStyle:
+            def get_section_icon(self, text):
+                return None
+        return MockStyle()
 
 # OAuth 2.0 설정 (절대 경로)
 CREDENTIALS_FILE = r'D:\AI\claude01\json\desktop_credentials.json'
