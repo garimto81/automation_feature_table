@@ -46,6 +46,8 @@ pytest tests/ -v --cov=src
 python -m src.main
 ```
 
+**참고**: `asyncio_mode = "auto"` 설정으로 async 테스트에서 `@pytest.mark.asyncio` 데코레이터 불필요.
+
 ## 아키텍처
 
 ```
@@ -66,7 +68,7 @@ Database    Grading    Recording
 | 모듈 | 역할 |
 |------|------|
 | `src/primary/pokergfx_client.py` | PokerGFX WebSocket 연결, RFID 카드 데이터 수신 |
-| `src/primary/hand_classifier.py` | phevaluator 기반 핸드 등급 분류 (Royal Flush ~ High Card) |
+| `src/primary/hand_classifier.py` | phevaluator 기반 핸드 등급 분류 |
 | `src/secondary/gemini_live.py` | Gemini Live API로 비디오 스트림 분석 |
 | `src/secondary/video_capture.py` | RTSP 스트림 캡처 (OpenCV) |
 | `src/fusion/engine.py` | Primary/Secondary 결과 융합 및 cross-validation |
@@ -74,22 +76,38 @@ Database    Grading    Recording
 | `src/database/` | PostgreSQL ORM 모델, 연결, 저장소 |
 | `src/recording/` | vMix 녹화 세션 관리 |
 | `src/vmix/client.py` | vMix HTTP API 클라이언트 |
-| `src/fallback/` | 장애 감지 및 수동 마킹 폴백
+| `src/fallback/` | 장애 감지 및 수동 마킹 폴백 |
 
 ### Fusion 결정 로직
 
-1. Primary + Secondary 일치 → Primary 사용 (validated)
-2. Primary + Secondary 불일치 → Primary 사용 (review 플래그)
-3. Primary 없음 + Secondary 있음 (confidence >= 0.80) → Secondary fallback
-4. 둘 다 없음 → Manual 필요
+| 케이스 | 조건 | 결과 |
+|--------|------|------|
+| 1 | Primary + Secondary 일치 | Primary 사용 (validated) |
+| 2 | Primary + Secondary 불일치 | Primary 사용 (review 플래그) |
+| 3 | Primary 없음 + Secondary (confidence >= 0.80) | Secondary fallback |
+| 4 | 둘 다 없음 | Manual 필요 |
 
 ### 데이터 모델 (`src/models/hand.py`)
 
-- `Card`: 카드 표현 (rank + suit)
-- `HandRank`: 핸드 등급 enum (1=Royal Flush ~ 10=High Card)
-- `HandResult`: Primary 결과
-- `AIVideoResult`: Secondary 결과
-- `FusedHandResult`: 융합 결과
+- `HandRank`: 핸드 등급 enum (value 1~10, 낮을수록 강함)
+- `HandResult`: Primary 결과 (RFID 기반, confidence=1.0)
+- `AIVideoResult`: Secondary 결과 (AI 추론, confidence=0.0~1.0)
+- `FusedHandResult`: 융합 결과 (cross_validated, requires_review 플래그)
+
+### HandRank 값 기준
+
+| Value | Rank | Premium |
+|:-----:|------|:-------:|
+| 1 | Royal Flush | O |
+| 2 | Straight Flush | O |
+| 3 | Four of a Kind | O |
+| 4 | Full House | O |
+| 5 | Flush | X |
+| 6 | Straight | X |
+| 7 | Three of a Kind | X |
+| 8 | Two Pair | X |
+| 9 | One Pair | X |
+| 10 | High Card | X |
 
 ## 환경 설정
 
@@ -108,10 +126,9 @@ Database    Grading    Recording
 
 ### 조건 (2개 이상 충족 시 등급 확보)
 
-1. **프리미엄 핸드**: 플레이어 소유 핸드가 프리미엄 핸드인 경우
-   - Royal Flush, Straight Flush, Four of a Kind, Full House
-2. **플레이 시간**: 핸드 플레이 시간이 긴 경우
-3. **보드 조합**: 보드 + 플레이 핸드 조합이 Three of a Kind 이상 (7번부터 프리미엄 체크)
+1. **프리미엄 핸드**: HandRank.value <= 4 (Full House 이상)
+2. **플레이 시간**: duration >= 120초 (설정 가능)
+3. **보드 조합**: board_rank_value <= 7 (Three of a Kind 이상)
 
 ### 등급 기준
 
@@ -119,14 +136,40 @@ Database    Grading    Recording
 |:----:|:--------:|:--------:|
 | A | 3개 모두 | O |
 | B | 2개 | O |
-| C | 1개 | X |
+| C | 0~1개 | X |
 
-> **B등급 이상부터 방송 사용 가능**
-
-### 편집점 추론
-
-기존 방송 분석을 통한 패턴 학습으로 편집 시작점 자동 추론
+> **B등급 이상부터 방송 사용 가능** (`broadcast_eligible = True`)
 
 ## Python 버전
 
 Python 3.11+ 필수 (phevaluator, pydantic-settings 호환성)
+
+## 문서 관리
+
+### Google Drive (마스터 문서)
+
+| 리소스 | URL |
+|--------|-----|
+| **공유 폴더** | [Google AI Studio](https://drive.google.com/drive/folders/1JwdlUe_v4Ug-yQ0veXTldFl6C24GH8hW) |
+| PRD-0001 (Docs) | 포커 핸드 자동 캡처 및 분류 시스템 |
+
+**폴더 내용**:
+- `PRD-0001: 포커 핸드 자동 캡처 및 분류 시스템` (Google Docs)
+- `architecture.png` - 시스템 아키텍처 다이어그램
+- `fusion-engine.png` - Fusion Engine 설계
+- `hand-grading.png` - 핸드 등급 분류
+
+### 로컬 문서 (tasks/prds/)
+
+| 파일 | 내용 |
+|------|------|
+| `PRD-0001-poker-hand-auto-capture.md` | 프로젝트 전체 요구사항 |
+| `PRD-0002-primary-gfx-rfid.md` | Primary 소스 (PokerGFX RFID) |
+| `PRD-0003-secondary-gemini-live.md` | Secondary 소스 (Gemini Live) |
+| `PRD-0004-fusion-engine.md` | Fusion Engine |
+| `PRD-0005-integrated-db-subtitle-system.md` | DB/자막 시스템 |
+| `PRD-0007-custom-rfid-client.md` | 커스텀 RFID 클라이언트 |
+
+### Checklist (docs/checklists/)
+
+PRD별 진행 체크리스트: `PRD-0001.md` ~ `PRD-0007.md`

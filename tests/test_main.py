@@ -52,12 +52,53 @@ class MockVideoSettings:
 
 
 @dataclass
-class MockOutputSettings:
-    """Mock Output settings."""
+class MockDatabaseSettings:
+    """Mock Database settings."""
 
-    overlay_ws_port: int = 8081
-    clip_markers_path: str = "./test_output/markers"
-    edl_format: str = "cmx3600"
+    host: str = "localhost"
+    port: int = 5432
+    database: str = "test_db"
+    username: str = "test_user"
+    password: str = "test_pass"
+    pool_size: int = 5
+
+
+@dataclass
+class MockVMixSettings:
+    """Mock VMix settings."""
+
+    host: str = "127.0.0.1"
+    port: int = 8088
+    timeout: float = 5.0
+    auto_record: bool = True
+
+
+@dataclass
+class MockRecordingSettings:
+    """Mock Recording settings."""
+
+    output_path: str = "./test_recordings"
+    format: str = "mp4"
+    max_duration_seconds: int = 600
+    min_duration_seconds: int = 10
+
+
+@dataclass
+class MockGradingSettings:
+    """Mock Grading settings."""
+
+    playtime_threshold: int = 120
+    board_combo_threshold: int = 7
+
+
+@dataclass
+class MockFallbackSettings:
+    """Mock Fallback settings."""
+
+    enabled: bool = True
+    primary_timeout: int = 30
+    secondary_timeout: int = 60
+    mismatch_threshold: int = 3
 
 
 @dataclass
@@ -67,7 +108,11 @@ class MockSettings:
     pokergfx: MockPokerGFXSettings = field(default_factory=MockPokerGFXSettings)
     gemini: MockGeminiSettings = field(default_factory=MockGeminiSettings)
     video: MockVideoSettings = field(default_factory=MockVideoSettings)
-    output: MockOutputSettings = field(default_factory=MockOutputSettings)
+    database: MockDatabaseSettings = field(default_factory=MockDatabaseSettings)
+    vmix: MockVMixSettings = field(default_factory=MockVMixSettings)
+    recording: MockRecordingSettings = field(default_factory=MockRecordingSettings)
+    grading: MockGradingSettings = field(default_factory=MockGradingSettings)
+    fallback: MockFallbackSettings = field(default_factory=MockFallbackSettings)
     log_level: str = "INFO"
     debug: bool = False
     table_ids: list = field(default_factory=lambda: ["table_1", "table_2"])
@@ -107,32 +152,38 @@ class TestPokerHandCaptureSystemInit:
         """Test initialization with provided settings."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager"):
-            with patch("src.main.OverlayServer"):
+        with patch("src.main.DatabaseManager"):
+            with patch("src.main.HandRepository"):
                 with patch("src.main.PokerGFXClient"):
                     with patch("src.main.VideoCapture"):
                         with patch("src.main.MultiTableFusionEngine"):
-                            system = PokerHandCaptureSystem(mock_settings)
+                            with patch("src.main.VMixClient"):
+                                with patch("src.main.HandGrader"):
+                                    with patch("src.main.FailureDetector"):
+                                        system = PokerHandCaptureSystem(mock_settings)
 
-                            assert system.settings == mock_settings
-                            assert system._running is False
+                                        assert system.settings == mock_settings
+                                        assert system._running is False
 
     def test_init_creates_components(self, mock_settings):
         """Test that all components are created."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager") as mock_clip:
-            with patch("src.main.OverlayServer") as mock_overlay:
+        with patch("src.main.DatabaseManager") as mock_db:
+            with patch("src.main.HandRepository") as mock_repo:
                 with patch("src.main.PokerGFXClient") as mock_client:
                     with patch("src.main.VideoCapture") as mock_video:
                         with patch("src.main.MultiTableFusionEngine") as mock_fusion:
-                            system = PokerHandCaptureSystem(mock_settings)
+                            with patch("src.main.VMixClient") as mock_vmix:
+                                with patch("src.main.HandGrader") as mock_grader:
+                                    with patch("src.main.FailureDetector") as mock_fallback:
+                                        system = PokerHandCaptureSystem(mock_settings)
 
-                            mock_client.assert_called_once()
-                            mock_video.assert_called_once()
-                            mock_fusion.assert_called_once()
-                            mock_overlay.assert_called_once()
-                            mock_clip.assert_called_once()
+                                        mock_client.assert_called_once()
+                                        mock_video.assert_called_once()
+                                        mock_fusion.assert_called_once()
+                                        mock_db.assert_called_once()
+                                        mock_vmix.assert_called_once()
 
 
 class TestPokerHandCaptureSystemStart:
@@ -143,16 +194,22 @@ class TestPokerHandCaptureSystemStart:
         """Test that start sets running flag."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager"):
-            with patch("src.main.OverlayServer") as mock_overlay:
-                mock_overlay.return_value.start = AsyncMock()
+        with patch("src.main.DatabaseManager") as mock_db:
+            mock_db.return_value.connect = AsyncMock()
+            mock_db.return_value.create_tables = AsyncMock()
+            with patch("src.main.HandRepository"):
                 with patch("src.main.PokerGFXClient"):
                     with patch("src.main.VideoCapture"):
                         with patch("src.main.MultiTableFusionEngine"):
-                            system = PokerHandCaptureSystem(mock_settings)
-                            await system.start()
+                            with patch("src.main.VMixClient") as mock_vmix:
+                                mock_vmix.return_value.ping = AsyncMock(return_value=True)
+                                with patch("src.main.HandGrader"):
+                                    with patch("src.main.FailureDetector"):
+                                        with patch("src.main.RecordingManager"):
+                                            system = PokerHandCaptureSystem(mock_settings)
+                                            await system.start()
 
-                            assert system._running is True
+                                            assert system._running is True
 
 
 class TestPokerHandCaptureSystemStop:
@@ -163,10 +220,9 @@ class TestPokerHandCaptureSystemStop:
         """Test that stop clears running flag."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager") as mock_clip:
-            mock_clip.return_value.markers = []
-            with patch("src.main.OverlayServer") as mock_overlay:
-                mock_overlay.return_value.stop = AsyncMock()
+        with patch("src.main.DatabaseManager") as mock_db:
+            mock_db.return_value.disconnect = AsyncMock()
+            with patch("src.main.HandRepository"):
                 with patch("src.main.PokerGFXClient") as mock_client:
                     mock_client.return_value.disconnect = AsyncMock()
                     with patch("src.main.VideoCapture") as mock_video:
@@ -175,41 +231,46 @@ class TestPokerHandCaptureSystemStop:
                             mock_fusion.return_value.get_aggregate_stats = MagicMock(
                                 return_value={}
                             )
-                            system = PokerHandCaptureSystem(mock_settings)
-                            system._running = True
-                            system.gemini_processors = {}
+                            with patch("src.main.VMixClient") as mock_vmix:
+                                mock_vmix.return_value.close = AsyncMock()
+                                with patch("src.main.HandGrader"):
+                                    with patch("src.main.FailureDetector"):
+                                        system = PokerHandCaptureSystem(mock_settings)
+                                        system._running = True
+                                        system.gemini_processors = {}
+                                        system.recording_manager = None
 
-                            await system.stop()
+                                        await system.stop()
 
-                            assert system._running is False
+                                        assert system._running is False
 
     @pytest.mark.asyncio
-    async def test_stop_exports_markers(self, mock_settings):
-        """Test that stop exports markers if present."""
+    async def test_stop_logs_stats(self, mock_settings):
+        """Test that stop logs statistics."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager") as mock_clip:
-            mock_marker = MagicMock()
-            mock_clip.return_value.markers = [mock_marker]
-            mock_clip.return_value.export_json = MagicMock()
-            mock_clip.return_value.export_edl = MagicMock()
-            with patch("src.main.OverlayServer") as mock_overlay:
-                mock_overlay.return_value.stop = AsyncMock()
+        with patch("src.main.DatabaseManager") as mock_db:
+            mock_db.return_value.disconnect = AsyncMock()
+            with patch("src.main.HandRepository"):
                 with patch("src.main.PokerGFXClient") as mock_client:
                     mock_client.return_value.disconnect = AsyncMock()
                     with patch("src.main.VideoCapture") as mock_video:
                         mock_video.return_value.release_all = MagicMock()
                         with patch("src.main.MultiTableFusionEngine") as mock_fusion:
                             mock_fusion.return_value.get_aggregate_stats = MagicMock(
-                                return_value={}
+                                return_value={"total": 10}
                             )
-                            system = PokerHandCaptureSystem(mock_settings)
-                            system.gemini_processors = {}
+                            with patch("src.main.VMixClient") as mock_vmix:
+                                mock_vmix.return_value.close = AsyncMock()
+                                with patch("src.main.HandGrader"):
+                                    with patch("src.main.FailureDetector"):
+                                        system = PokerHandCaptureSystem(mock_settings)
+                                        system.gemini_processors = {}
+                                        system.recording_manager = None
 
-                            await system.stop()
+                                        await system.stop()
 
-                            mock_clip.return_value.export_json.assert_called_once()
-                            mock_clip.return_value.export_edl.assert_called_once()
+                                        mock_fusion.return_value.get_aggregate_stats.assert_called_once()
 
 
 class TestPokerHandCaptureSystemHandlers:
@@ -219,85 +280,107 @@ class TestPokerHandCaptureSystemHandlers:
     async def test_handle_primary_result(self, mock_settings):
         """Test handling primary result."""
         from src.main import PokerHandCaptureSystem
-        from src.models.hand import HandRank, HandResult
 
-        with patch("src.main.ClipMarkerManager") as mock_clip:
-            mock_clip.return_value.add_from_result = MagicMock()
-            with patch("src.main.OverlayServer") as mock_overlay:
-                mock_overlay.return_value.broadcast_hand_result = AsyncMock()
+        with patch("src.main.DatabaseManager"):
+            with patch("src.main.HandRepository") as mock_repo:
+                mock_repo.return_value.save_hand = AsyncMock()
                 with patch("src.main.PokerGFXClient"):
                     with patch("src.main.VideoCapture"):
                         with patch("src.main.MultiTableFusionEngine") as mock_fusion:
                             mock_fused = MagicMock()
                             mock_fused.is_premium = False
+                            mock_fused.table_id = "table_1"
+                            mock_fused.hand_number = 1
+                            mock_fused.hand_rank = MagicMock(value=5)
                             mock_fusion.return_value.fuse = MagicMock(return_value=mock_fused)
+                            with patch("src.main.VMixClient"):
+                                with patch("src.main.HandGrader") as mock_grader:
+                                    mock_grade_result = MagicMock()
+                                    mock_grade_result.broadcast_eligible = False
+                                    mock_grade_result.grade = "C"
+                                    mock_grader.return_value.grade = MagicMock(return_value=mock_grade_result)
+                                    with patch("src.main.FailureDetector") as mock_fallback:
+                                        mock_fallback.return_value.update_primary_status = MagicMock()
+                                        mock_fallback.return_value.record_fusion_match = MagicMock()
+                                        mock_fallback.return_value.record_fusion_mismatch = MagicMock()
+                                        system = PokerHandCaptureSystem(mock_settings)
+                                        system.recording_manager = None
 
-                            system = PokerHandCaptureSystem(mock_settings)
+                                        mock_result = MagicMock()
+                                        mock_result.table_id = "table_1"
 
-                            # Create a mock result
-                            mock_result = MagicMock()
-                            mock_result.table_id = "table_1"
+                                        await system._handle_primary_result(mock_result)
 
-                            await system._handle_primary_result(mock_result)
-
-                            mock_fusion.return_value.fuse.assert_called_once()
-                            mock_overlay.return_value.broadcast_hand_result.assert_called_once()
+                                        mock_fusion.return_value.fuse.assert_called_once()
 
 
 class TestPokerHandCaptureSystemProcessFused:
     """Test fused result processing."""
 
     @pytest.mark.asyncio
-    async def test_process_fused_result_broadcasts(self, mock_settings):
-        """Test that fused results are broadcast."""
+    async def test_process_fused_result_saves_to_db(self, mock_settings):
+        """Test that fused results are saved to database."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager") as mock_clip:
-            mock_clip.return_value.add_from_result = MagicMock()
-            with patch("src.main.OverlayServer") as mock_overlay:
-                mock_overlay.return_value.broadcast_hand_result = AsyncMock()
+        with patch("src.main.DatabaseManager"):
+            with patch("src.main.HandRepository") as mock_repo:
+                mock_repo.return_value.save_hand = AsyncMock()
                 with patch("src.main.PokerGFXClient"):
                     with patch("src.main.VideoCapture"):
                         with patch("src.main.MultiTableFusionEngine"):
-                            system = PokerHandCaptureSystem(mock_settings)
+                            with patch("src.main.VMixClient"):
+                                with patch("src.main.HandGrader") as mock_grader:
+                                    mock_grade_result = MagicMock()
+                                    mock_grade_result.broadcast_eligible = False
+                                    mock_grade_result.grade = "C"
+                                    mock_grader.return_value.grade = MagicMock(return_value=mock_grade_result)
+                                    with patch("src.main.FailureDetector"):
+                                        system = PokerHandCaptureSystem(mock_settings)
+                                        system.recording_manager = None
 
-                            mock_result = MagicMock()
-                            mock_result.is_premium = False
+                                        mock_result = MagicMock()
+                                        mock_result.is_premium = False
+                                        mock_result.table_id = "table_1"
+                                        mock_result.hand_number = 1
+                                        mock_result.hand_rank = MagicMock(value=5)
 
-                            await system._process_fused_result(mock_result)
+                                        await system._process_fused_result(mock_result)
 
-                            mock_overlay.return_value.broadcast_hand_result.assert_called_once_with(
-                                mock_result
-                            )
-                            mock_clip.return_value.add_from_result.assert_called_once_with(
-                                mock_result
-                            )
+                                        mock_repo.return_value.save_hand.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_process_fused_result_logs_premium(self, mock_settings):
         """Test that premium hands are logged."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager") as mock_clip:
-            mock_clip.return_value.add_from_result = MagicMock()
-            with patch("src.main.OverlayServer") as mock_overlay:
-                mock_overlay.return_value.broadcast_hand_result = AsyncMock()
+        with patch("src.main.DatabaseManager"):
+            with patch("src.main.HandRepository") as mock_repo:
+                mock_repo.return_value.save_hand = AsyncMock()
                 with patch("src.main.PokerGFXClient"):
                     with patch("src.main.VideoCapture"):
                         with patch("src.main.MultiTableFusionEngine"):
-                            with patch("src.main.logger") as mock_logger:
-                                system = PokerHandCaptureSystem(mock_settings)
+                            with patch("src.main.VMixClient"):
+                                with patch("src.main.HandGrader") as mock_grader:
+                                    mock_grade_result = MagicMock()
+                                    mock_grade_result.broadcast_eligible = True
+                                    mock_grade_result.grade = "A"
+                                    mock_grader.return_value.grade = MagicMock(return_value=mock_grade_result)
+                                    with patch("src.main.FailureDetector"):
+                                        with patch("src.main.logger") as mock_logger:
+                                            system = PokerHandCaptureSystem(mock_settings)
+                                            system.recording_manager = None
 
-                                mock_result = MagicMock()
-                                mock_result.is_premium = True
-                                mock_result.table_id = "table_1"
-                                mock_result.hand_number = 123
-                                mock_result.rank_name = "Royal Flush"
-                                mock_result.source.value = "primary"
+                                            mock_result = MagicMock()
+                                            mock_result.is_premium = True
+                                            mock_result.table_id = "table_1"
+                                            mock_result.hand_number = 123
+                                            mock_result.rank_name = "Royal Flush"
+                                            mock_result.hand_rank = MagicMock(value=1)
+                                            mock_result.source.value = "primary"
 
-                                await system._process_fused_result(mock_result)
+                                            await system._process_fused_result(mock_result)
 
-                                mock_logger.info.assert_called()
+                                            mock_logger.info.assert_called()
 
 
 class TestBufferManagement:
@@ -307,25 +390,31 @@ class TestBufferManagement:
         """Test that secondary buffer starts empty."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager"):
-            with patch("src.main.OverlayServer"):
+        with patch("src.main.DatabaseManager"):
+            with patch("src.main.HandRepository"):
                 with patch("src.main.PokerGFXClient"):
                     with patch("src.main.VideoCapture"):
                         with patch("src.main.MultiTableFusionEngine"):
-                            system = PokerHandCaptureSystem(mock_settings)
+                            with patch("src.main.VMixClient"):
+                                with patch("src.main.HandGrader"):
+                                    with patch("src.main.FailureDetector"):
+                                        system = PokerHandCaptureSystem(mock_settings)
 
-                            assert system._primary_buffer == {}
-                            assert system._secondary_buffer == {}
+                                        assert system._primary_buffer == {}
+                                        assert system._secondary_buffer == {}
 
     def test_gemini_processors_init_empty(self, mock_settings):
         """Test that gemini processors dict starts empty."""
         from src.main import PokerHandCaptureSystem
 
-        with patch("src.main.ClipMarkerManager"):
-            with patch("src.main.OverlayServer"):
+        with patch("src.main.DatabaseManager"):
+            with patch("src.main.HandRepository"):
                 with patch("src.main.PokerGFXClient"):
                     with patch("src.main.VideoCapture"):
                         with patch("src.main.MultiTableFusionEngine"):
-                            system = PokerHandCaptureSystem(mock_settings)
+                            with patch("src.main.VMixClient"):
+                                with patch("src.main.HandGrader"):
+                                    with patch("src.main.FailureDetector"):
+                                        system = PokerHandCaptureSystem(mock_settings)
 
-                            assert system.gemini_processors == {}
+                                        assert system.gemini_processors == {}
