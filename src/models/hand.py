@@ -70,13 +70,23 @@ class PlayerInfo:
 
     @classmethod
     def from_dict(cls, data: dict) -> "PlayerInfo":
-        """Create from dictionary."""
-        hole_cards = [Card.from_string(c) for c in data.get("hole_cards", [])]
+        """Create from dictionary.
+
+        Supports both standard format (seat, name, hole_cards, stack)
+        and PRD-0002 PokerGFX format (PlayerNum, Name, HoleCards, EndStackAmt).
+        """
+        # Support both key formats
+        seat = data.get("seat") or data.get("PlayerNum", 0)
+        name = data.get("name") or data.get("Name", "")
+        raw_cards = data.get("hole_cards") or data.get("HoleCards", [])
+        stack = data.get("stack") or data.get("EndStackAmt", 0)
+
+        hole_cards = [Card.from_string(c) for c in raw_cards]
         return cls(
-            seat=data["seat"],
-            name=data["name"],
+            seat=seat,
+            name=name,
             hole_cards=hole_cards,
-            stack=data.get("stack", 0),
+            stack=stack,
         )
 
 

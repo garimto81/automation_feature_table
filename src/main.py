@@ -5,7 +5,7 @@ import logging
 import signal
 from datetime import datetime
 
-from src.config.settings import Settings, get_settings
+from src.config.settings import PokerGFXSettings, Settings, get_settings
 from src.database.connection import DatabaseManager
 from src.database.repository import HandRepository
 from src.fallback.detector import AutomationState, FailureDetector, FailureReason
@@ -13,6 +13,7 @@ from src.fallback.manual_marker import MultiTableManualMarker, PairedMark
 from src.fusion.engine import MultiTableFusionEngine
 from src.grading.grader import HandGrader
 from src.models.hand import AIVideoResult, FusedHandResult, HandResult
+from src.primary.json_file_watcher import JSONFileWatcher
 from src.primary.pokergfx_client import PokerGFXClient
 from src.recording.manager import RecordingManager
 from src.recording.session import RecordingSession
@@ -26,6 +27,36 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# Type alias for Primary source (WebSocket or JSON file watcher)
+PrimarySource = PokerGFXClient | JSONFileWatcher
+
+
+def create_primary_source(settings: PokerGFXSettings) -> PrimarySource:
+    """Factory function to create Primary source based on mode setting.
+
+    Args:
+        settings: PokerGFX settings with mode configured
+
+    Returns:
+        PokerGFXClient for websocket mode, JSONFileWatcher for json mode
+
+    Raises:
+        ValueError: If mode is not recognized
+    """
+    mode = settings.mode.lower()
+
+    if mode == "websocket":
+        logger.info("Using WebSocket mode for Primary source")
+        return PokerGFXClient(settings)
+    elif mode == "json":
+        if not settings.json_watch_path:
+            raise ValueError("POKERGFX_JSON_PATH must be set for json mode")
+        logger.info(f"Using JSON file mode for Primary source: {settings.json_watch_path}")
+        return JSONFileWatcher(settings)
+    else:
+        raise ValueError(f"Unknown POKERGFX_MODE: {mode}. Use 'websocket' or 'json'")
 
 
 class PokerHandCaptureSystem:
@@ -47,8 +78,10 @@ class PokerHandCaptureSystem:
         self.db_manager = DatabaseManager(self.settings.database)
         self.hand_repository = HandRepository(self.db_manager)
 
-        # Primary/Secondary sources
-        self.pokergfx_client = PokerGFXClient(self.settings.pokergfx)
+        # Primary source (WebSocket or JSON file watcher based on mode)
+        self.primary_source: PrimarySource = create_primary_source(self.settings.pokergfx)
+
+        # Secondary sources
         self.video_capture = VideoCapture(self.settings.video)
         self.gemini_processors: dict[str, GeminiLiveProcessor] = {}
 
@@ -130,7 +163,7 @@ class PokerHandCaptureSystem:
             await self.recording_manager.stop_all()
 
         # Disconnect components
-        await self.pokergfx_client.disconnect()
+        await self.primary_source.disconnect()
         self.video_capture.release_all()
         await self.vmix_client.close()
 
@@ -298,9 +331,9 @@ class PokerHandCaptureSystem:
             logger.error(f"Failed to save manual mark: {e}")
 
     async def run_primary_loop(self) -> None:
-        """Run Primary (PokerGFX) processing loop."""
+        """Run Primary (PokerGFX/JSON file) processing loop."""
         try:
-            async for result in self.pokergfx_client.listen():
+            async for result in self.primary_source.listen():
                 if not self._running:
                     break
 
@@ -396,10 +429,15 @@ class PokerHandCaptureSystem:
             "fusion": self.fusion_engine.get_aggregate_stats(),
             "fallback": self.failure_detector.get_stats(),
             "manual_markers": self.manual_markers.get_all_stats(),
+            "primary_mode": self.settings.pokergfx.mode,
         }
 
         if self.recording_manager:
             stats["recording"] = self.recording_manager.get_stats()
+
+        # Add primary source specific stats
+        if hasattr(self.primary_source, "get_stats"):
+            stats["primary_source"] = self.primary_source.get_stats()
 
         return stats
 

@@ -7,12 +7,46 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PokerGFXSettings(BaseSettings):
-    """PokerGFX API configuration."""
+    """PokerGFX configuration - WebSocket OR JSON file mode."""
 
+    # Mode selection: "websocket" or "json"
+    mode: str = Field(
+        default="json",
+        alias="POKERGFX_MODE",
+        description="Primary source mode: websocket or json",
+    )
+
+    # WebSocket mode settings (legacy)
     api_url: str = Field(default="ws://localhost:8080", alias="POKERGFX_API_URL")
     api_key: str = Field(default="", alias="POKERGFX_API_KEY")
     reconnect_interval: int = Field(default=5, description="Reconnect interval in seconds")
     max_retries: int = Field(default=3, description="Maximum reconnection attempts")
+
+    # JSON file mode settings (NAS)
+    json_watch_path: str = Field(
+        default="",
+        alias="POKERGFX_JSON_PATH",
+        description="NAS mounted path for JSON files",
+    )
+    polling_interval: float = Field(
+        default=2.0,
+        alias="POKERGFX_POLLING_INTERVAL",
+        description="File polling interval in seconds (for SMB/NAS)",
+    )
+    processed_db_path: str = Field(
+        default="./data/processed_files.json",
+        alias="POKERGFX_PROCESSED_DB",
+        description="Path to store processed file records",
+    )
+    file_pattern: str = Field(
+        default="*.json",
+        alias="POKERGFX_FILE_PATTERN",
+        description="Glob pattern for JSON files",
+    )
+    file_settle_delay: float = Field(
+        default=0.5,
+        description="Delay before reading file to ensure write completion",
+    )
 
 
 class GeminiSettings(BaseSettings):

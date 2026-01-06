@@ -1,0 +1,133 @@
+# Poker Hand Auto-Capture System - Docker Compose
+# Deployment configuration for Synology NAS (DSM 7.2+)
+#
+# Usage:
+#   1. Copy this file to /volume1/docker/poker-capture/
+#   2. Create .env file with DB_PASSWORD and PGADMIN_PASSWORD
+#   3. Run: docker-compose up -d --build
+#
+# Folder structure required:
+#   /volume1/docker/
+#   ├── poker-capture/
+#   │   ├── app/           # Application code (copy from project)
+#   │   ├── data/          # Processed files DB, logs
+#   │   └── docker-compose.yml
+#   ├── postgresql/
+#   │   └── data/          # PostgreSQL data persistence
+#   └── pokergfx/
+#       └── hands/         # JSON files from PokerGFX
+
+version: "3.8"
+
+services:
+  # =============================================================================
+  # PostgreSQL Database
+  # =============================================================================
+  db:
+    container_name: poker-db
+    image: postgres:16-alpine
+    mem_limit: 512m
+    cpu_shares: 768
+    environment:
+      POSTGRES_USER: poker
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: poker_hands
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - /volume1/docker/postgresql/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poker -d poker_hands"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - poker-network
+
+  # =============================================================================
+  # Poker Hand Capture System
+  # =============================================================================
+  poker-capture:
+    container_name: poker-capture
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    mem_limit: 256m
+    cpu_shares: 512
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Primary Source Mode
+      - POKERGFX_MODE=json
+      - POKERGFX_JSON_PATH=/watch
+      - POKERGFX_POLLING_INTERVAL=2.0
+      - POKERGFX_PROCESSED_DB=/app/data/processed_files.json
+      - POKERGFX_FILE_PATTERN=*.json
+
+      # Database Connection
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=poker_hands
+      - DB_USER=poker
+      - DB_PASSWORD=${DB_PASSWORD}
+
+      # Secondary Source (Gemini AI) - Optional
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=gemini-2.5-flash-native-audio-preview
+
+      # vMix Recording - Optional
+      - VMIX_HOST=${VMIX_HOST:-127.0.0.1}
+      - VMIX_PORT=${VMIX_PORT:-8088}
+      - VMIX_AUTO_RECORD=${VMIX_AUTO_RECORD:-false}
+
+      # Fallback
+      - FALLBACK_ENABLED=true
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      # JSON file input folder (read-only from PokerGFX)
+      - /volume1/docker/pokergfx/hands:/watch:ro
+      # Application data (processed files DB, logs)
+      - /volume1/docker/poker-capture/data:/app/data
+    restart: unless-stopped
+    networks:
+      - poker-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # pgAdmin (Optional - Database Management UI)
+  # =============================================================================
+  pgadmin:
+    container_name: poker-pgadmin
+    image: dpage/pgadmin4:latest
+    mem_limit: 256m
+    cpu_shares: 256
+    profiles:
+      - admin  # Only starts with: docker-compose --profile admin up -d
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@poker.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD is required}
+      PGADMIN_LISTEN_PORT: 5050
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:5050"
+    volumes:
+      - /volume1/docker/poker-capture/pgadmin:/var/lib/pgadmin
+    restart: unless-stopped
+    networks:
+      - poker-network
+    depends_on:
+      - db
+
+networks:
+  poker-network:
+    driver: bridge

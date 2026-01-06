@@ -24,10 +24,21 @@ sys.modules["cv2"] = mock_cv2
 class MockPokerGFXSettings:
     """Mock PokerGFX settings."""
 
+    # Mode selection
+    mode: str = "websocket"
+
+    # WebSocket settings
     api_url: str = "ws://test.pokergfx.io/api"
     api_key: str = "test-api-key"
     reconnect_interval: float = 1.0
     max_retries: int = 3
+
+    # JSON file mode settings
+    json_watch_path: str = ""
+    polling_interval: float = 2.0
+    processed_db_path: str = "./data/processed_files.json"
+    file_pattern: str = "*.json"
+    file_settle_delay: float = 0.5
 
 
 @dataclass
