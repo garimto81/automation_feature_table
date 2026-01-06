@@ -1,0 +1,109 @@
+{
+  "name": "poker-capture",
+  "description": "Poker Hand Auto-Capture and Classification System",
+  "version": "0.1.0",
+  "containers": [
+    {
+      "name": "poker-db",
+      "image": "postgres:16-alpine",
+      "network_mode": "bridge",
+      "ports": [
+        {
+          "container": 5432,
+          "host": 5432,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "POSTGRES_USER",
+          "value": "poker"
+        },
+        {
+          "name": "POSTGRES_DB",
+          "value": "poker_hands"
+        },
+        {
+          "name": "PGDATA",
+          "value": "/var/lib/postgresql/data/pgdata"
+        }
+      ],
+      "volumes": [
+        {
+          "container": "/var/lib/postgresql/data",
+          "host": "/volume1/docker/postgresql/data"
+        }
+      ],
+      "memory_limit": 536870912,
+      "restart_policy": "unless-stopped"
+    },
+    {
+      "name": "poker-capture",
+      "build": {
+        "context": "/volume1/docker/poker-capture/app",
+        "dockerfile": "Dockerfile"
+      },
+      "network_mode": "bridge",
+      "depends_on": ["poker-db"],
+      "environment": [
+        {
+          "name": "POKERGFX_MODE",
+          "value": "json"
+        },
+        {
+          "name": "POKERGFX_JSON_PATH",
+          "value": "/watch"
+        },
+        {
+          "name": "POKERGFX_POLLING_INTERVAL",
+          "value": "2.0"
+        },
+        {
+          "name": "DB_HOST",
+          "value": "poker-db"
+        },
+        {
+          "name": "DB_PORT",
+          "value": "5432"
+        },
+        {
+          "name": "DB_NAME",
+          "value": "poker_hands"
+        },
+        {
+          "name": "DB_USER",
+          "value": "poker"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "INFO"
+        }
+      ],
+      "volumes": [
+        {
+          "container": "/watch",
+          "host": "/volume1/docker/pokergfx/hands",
+          "read_only": true
+        },
+        {
+          "container": "/app/data",
+          "host": "/volume1/docker/poker-capture/data"
+        }
+      ],
+      "memory_limit": 268435456,
+      "restart_policy": "unless-stopped"
+    }
+  ],
+  "networks": {
+    "default": {
+      "driver": "bridge",
+      "name": "poker-network"
+    }
+  },
+  "notes": [
+    "1. Container Manager > Project > Create",
+    "2. Select 'poker-capture' folder with docker-compose.yml",
+    "3. Set environment variables (DB_PASSWORD required)",
+    "4. PokerGFX JSON output: /volume1/docker/pokergfx/hands/"
+  ]
+}

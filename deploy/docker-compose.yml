@@ -1,21 +1,25 @@
 # Poker Hand Auto-Capture System - Docker Compose
 # Deployment configuration for Synology NAS (DSM 7.2+)
 #
-# Usage:
+# Quick Start:
+#   1. ./install.sh (NAS SSH) 또는 deploy-to-nas.ps1 (Windows)
+#   2. PokerGFX에서 JSON 출력 경로를 \\NAS_IP\docker\pokergfx\hands\ 로 설정
+#
+# Manual Setup:
 #   1. Copy this file to /volume1/docker/poker-capture/
-#   2. Create .env file with DB_PASSWORD and PGADMIN_PASSWORD
+#   2. Create .env file: echo "DB_PASSWORD=yourpass" > .env
 #   3. Run: docker-compose up -d --build
 #
-# Folder structure required:
+# Folder structure:
 #   /volume1/docker/
 #   ├── poker-capture/
-#   │   ├── app/           # Application code (copy from project)
+#   │   ├── app/           # Application code
 #   │   ├── data/          # Processed files DB, logs
 #   │   └── docker-compose.yml
 #   ├── postgresql/
-#   │   └── data/          # PostgreSQL data persistence
+#   │   └── data/          # PostgreSQL persistence
 #   └── pokergfx/
-#       └── hands/         # JSON files from PokerGFX
+#       └── hands/         # JSON files from PokerGFX (SMB shared)
 
 version: "3.8"
 
@@ -127,6 +131,37 @@ services:
       - poker-network
     depends_on:
       - db
+
+  # =============================================================================
+  # Metabase (Optional - Analytics Dashboard)
+  # PRD-0005 참조: 플레이어 통계 시각화 (VPIP/PFR, Chip Flow, Pot Distribution)
+  # =============================================================================
+  metabase:
+    container_name: poker-metabase
+    image: metabase/metabase:latest
+    mem_limit: 1g
+    cpu_shares: 512
+    profiles:
+      - analytics  # Only starts with: docker-compose --profile analytics up -d
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: poker_hands
+      MB_DB_PORT: 5432
+      MB_DB_USER: poker
+      MB_DB_PASS: ${DB_PASSWORD}
+      MB_DB_HOST: db
+      MB_SITE_NAME: "Poker Analytics"
+      JAVA_TIMEZONE: Asia/Seoul
+    ports:
+      - "3000:3000"
+    volumes:
+      - /volume1/docker/poker-capture/metabase:/metabase-data
+    restart: unless-stopped
+    networks:
+      - poker-network
+    depends_on:
+      db:
+        condition: service_healthy
 
 networks:
   poker-network:

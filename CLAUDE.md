@@ -42,11 +42,16 @@ pytest tests/ -v
 # 커버리지 포함
 pytest tests/ -v --cov=src
 
+# 타입 검사
+mypy src/
+
 # 시스템 실행
 python -m src.main
 ```
 
-**참고**: `asyncio_mode = "auto"` 설정으로 async 테스트에서 `@pytest.mark.asyncio` 데코레이터 불필요.
+**참고**:
+- `asyncio_mode = "auto"` 설정으로 async 테스트에서 `@pytest.mark.asyncio` 데코레이터 불필요
+- `mypy --strict` 모드 활성화됨 (pyproject.toml)
 
 ## 아키텍처
 
@@ -173,3 +178,39 @@ Python 3.11+ 필수 (phevaluator, pydantic-settings 호환성)
 ### Checklist (docs/checklists/)
 
 PRD별 진행 체크리스트: `PRD-0001.md` ~ `PRD-0007.md`
+
+## 데이터 흐름
+
+```
+PokerGFX WebSocket → HandResult → ┐
+                                   ├→ FusionEngine.fuse() → FusedHandResult → HandGrader.grade() → GradeResult → Database
+Gemini Live API → AIVideoResult → ┘
+```
+
+### 주요 클래스 관계
+
+| 클래스 | 파일 | 역할 |
+|--------|------|------|
+| `PokerHandCaptureSystem` | `src/main.py` | 메인 오케스트레이터 |
+| `MultiTableFusionEngine` | `src/fusion/engine.py` | 테이블별 FusionEngine 관리 |
+| `FusionEngine` | `src/fusion/engine.py` | Primary/Secondary 결과 융합 |
+| `HandGrader` | `src/grading/grader.py` | A/B/C 등급 분류 |
+| `FailureDetector` | `src/fallback/detector.py` | 장애 감지 및 fallback 트리거 |
+
+## 설정 구조
+
+`src/config/settings.py`의 중첩 설정 클래스:
+
+```python
+Settings
+├── pokergfx: PokerGFXSettings
+├── gemini: GeminiSettings
+├── video: VideoSettings
+├── database: DatabaseSettings
+├── vmix: VMixSettings
+├── recording: RecordingSettings
+├── grading: GradingSettings
+└── fallback: FallbackSettings
+```
+
+설정 로드: `get_settings()` (LRU 캐시 적용)

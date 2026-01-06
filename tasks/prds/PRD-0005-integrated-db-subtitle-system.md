@@ -1596,10 +1596,158 @@ CREATE INDEX idx_player_stats_player ON player_stats(player_id);
 CREATE INDEX idx_player_stats_session ON player_stats(session_id);
 ```
 
-### B. 참조 자료
+### B. Metabase 시각화 대시보드
+
+> 참조: [dean.md 분석 결과](../../docs/dean.md)
+
+#### B.1 대시보드 개요
+
+Metabase를 활용하여 실시간 포커 데이터 시각화 대시보드를 구성합니다.
+
+**설치 (Synology NAS Container Manager)**:
+```bash
+# 레지스트리에서 metabase/metabase 다운로드 후
+# 로컬 포트 3000:3000 설정
+http://<NAS_IP>:3000
+```
+
+#### B.2 핵심 패널 구성 (4개)
+
+| 패널 | 차트 타입 | 데이터 소스 | 용도 |
+|------|----------|------------|------|
+| **Cumulative Winnings** | Line Chart | `chip_flow` | 플레이어별 누적 수익 추이 |
+| **VPIP/PFR Comparison** | Grouped Bar | `player_stats` | 상위 5명 플레이어 성향 비교 |
+| **Pot Size Distribution** | Histogram + KDE | `hands` | 팟 사이즈 분포 분석 |
+| **Player Type Breakdown** | Pie Chart | `player_stats` | 플레이어 유형 분포 (Fish/TAG/LAG) |
+
+#### B.3 SQL 쿼리 예시
+
+**1. Cumulative Winnings (Hero)**
+
+```sql
+SELECT
+    h.hand_number AS "Hand",
+    cf.running_total AS "Stack",
+    cf.timestamp
+FROM chip_flow cf
+JOIN hands h ON cf.hand_id = h.hand_id
+JOIN players p ON cf.player_id = p.player_id
+WHERE p.name = {{player_name}}
+ORDER BY h.hand_number;
+```
+
+**2. Top 5 Players VPIP/PFR**
+
+```sql
+SELECT
+    p.name AS "Player",
+    ps.vpip_pct AS "VPIP",
+    ps.pfr_pct AS "PFR",
+    ps.hands_played
+FROM player_stats ps
+JOIN players p ON ps.player_id = p.player_id
+WHERE ps.hands_played > 10
+ORDER BY ps.vpip_pct DESC
+LIMIT 5;
+```
+
+**3. Pot Size Distribution**
+
+```sql
+SELECT
+    pot_size AS "Pot",
+    COUNT(*) AS "Count"
+FROM hands
+WHERE pot_size > 0
+GROUP BY pot_size
+ORDER BY pot_size;
+```
+
+**4. Fish Detection (타겟 플레이어)**
+
+```sql
+SELECT
+    p.name AS "Player",
+    ps.vpip_pct AS "VPIP",
+    ps.pfr_pct AS "PFR",
+    CASE
+        WHEN ps.vpip_pct > 35 AND ps.pfr_pct < 15 THEN 'FISH'
+        WHEN ps.vpip_pct > 40 AND ps.pfr_pct > 30 THEN 'MANIAC'
+        WHEN ps.vpip_pct BETWEEN 25 AND 35 THEN 'LAG'
+        ELSE 'TAG/NIT'
+    END AS "Type"
+FROM player_stats ps
+JOIN players p ON ps.player_id = p.player_id
+WHERE ps.hands_played > 20
+ORDER BY ps.vpip_pct DESC;
+```
+
+#### B.4 대시보드 레이아웃
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 Poker Analytics Dashboard                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ Cumulative Winnings (Hero: {{player_name}})             │ │
+│  │ ▄▄█▄▄▄▄▄███▄▄▄██████▄▄▄▄▄▄▄▄▄████████████▄▄▄           │ │
+│  │ ────────────────────────────────────────────────────── │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  ┌──────────────────────────┐  ┌──────────────────────────┐ │
+│  │ Top 5 VPIP/PFR           │  │ Pot Size Distribution    │ │
+│  │ ▓▓▓▓ VPIP                │  │ ▓▓▓▓▓                    │ │
+│  │ ▒▒▒▒ PFR                 │  │ ▓▓▓▓▓▓▓▓                 │ │
+│  │                          │  │ ▓▓▓▓▓▓▓▓▓▓▓              │ │
+│  │ Player A ████████ ▒▒▒▒  │  │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓           │ │
+│  │ Player B ██████ ▒▒▒     │  │ ▓▓▓▓▓▓▓▓▓                │ │
+│  │ Player C █████ ▒▒▒      │  │ ▓▓▓▓▓                    │ │
+│  └──────────────────────────┘  └──────────────────────────┘ │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### B.5 NAS 배포 연동
+
+Metabase는 `poker-capture` Docker Compose 프로젝트와 동일 네트워크에서 실행:
+
+```yaml
+# deploy/docker-compose.yml (Metabase 추가)
+services:
+  metabase:
+    image: metabase/metabase:latest
+    container_name: poker-metabase
+    profiles:
+      - analytics
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: poker_hands
+      MB_DB_PORT: 5432
+      MB_DB_USER: poker
+      MB_DB_PASS: ${DB_PASSWORD}
+      MB_DB_HOST: poker-db
+    depends_on:
+      - poker-db
+    networks:
+      - poker-network
+    restart: unless-stopped
+```
+
+**실행**:
+```bash
+docker-compose --profile analytics up -d
+```
+
+---
+
+### C. 참조 자료
 
 - [PRD-0001: 포커 핸드 자동 캡처](./PRD-0001-poker-hand-auto-capture.md)
 - [PRD-0002: Primary Layer - GFX RFID](./PRD-0002-primary-gfx-rfid.md)
 - [PostgreSQL 공식 문서](https://www.postgresql.org/docs/)
 - [asyncpg 문서](https://magicstack.github.io/asyncpg/)
+- [Metabase 문서](https://www.metabase.com/docs/latest/)
 - [Adobe After Effects Scripting Guide](https://ae-scripting.docsforadobe.dev/)

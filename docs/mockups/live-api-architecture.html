@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=600px, initial-scale=1.0">
+    <title>Secondary Layer - Gemini Live API</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: transparent;
+            display: flex;
+            justify-content: center;
+            padding: 0;
+        }
+
+        #capture-area {
+            width: 600px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            padding: 24px;
+        }
+
+        .title {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #34a853;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 14px;
+            color: #5f6368;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e8eaed;
+        }
+
+        .team-badge {
+            display: inline-block;
+            background: #e6f4ea;
+            color: #34a853;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 12px;
+            border: 1px solid #34a853;
+            margin-left: 8px;
+        }
+
+        /* Pipeline Container */
+        .pipeline {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .stage {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .stage-num {
+            width: 28px;
+            height: 28px;
+            background: #34a853;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .stage-content {
+            flex: 1;
+            background: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
+            border: 1px solid #34a853;
+            border-radius: 10px;
+            padding: 14px 16px;
+        }
+
+        .stage-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #34a853;
+            margin-bottom: 6px;
+        }
+
+        .stage-desc {
+            font-size: 12px;
+            color: #202124;
+            line-height: 1.5;
+        }
+
+        .stage-tech {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tech-tag {
+            background: white;
+            border: 1px solid #34a853;
+            color: #34a853;
+            font-size: 10px;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        /* Arrow between stages */
+        .arrow-connector {
+            display: flex;
+            justify-content: center;
+            padding-left: 40px;
+        }
+
+        .arrow-connector svg {
+            width: 20px;
+            height: 20px;
+            fill: #34a853;
+        }
+
+        /* Specs Section */
+        .specs-section {
+            margin-top: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .specs-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #5f6368;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+
+        .specs-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .spec-item {
+            background: white;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .spec-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #34a853;
+            margin-bottom: 4px;
+        }
+
+        .spec-label {
+            font-size: 11px;
+            color: #5f6368;
+        }
+
+        /* Prompt Section */
+        .prompt-section {
+            margin-top: 16px;
+            background: linear-gradient(135deg, #fef7e0 0%, #feefc3 100%);
+            border: 1px solid #f9ab00;
+            border-radius: 10px;
+            padding: 14px;
+        }
+
+        .prompt-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #f9ab00;
+            margin-bottom: 8px;
+        }
+
+        .prompt-content {
+            font-size: 11px;
+            color: #202124;
+            background: white;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: monospace;
+            line-height: 1.6;
+        }
+
+        /* Output Format */
+        .output-section {
+            margin-top: 16px;
+            border: 2px dashed #34a853;
+            border-radius: 10px;
+            padding: 14px;
+        }
+
+        .output-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #34a853;
+            margin-bottom: 10px;
+        }
+
+        .output-json {
+            font-size: 11px;
+            color: #202124;
+            background: #f1f3f4;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: monospace;
+            line-height: 1.5;
+        }
+
+        .json-key { color: #1a73e8; }
+        .json-value { color: #34a853; }
+        .json-string { color: #ea4335; }
+    </style>
+</head>
+<body>
+    <div id="capture-area">
+        <div class="title">Secondary Layer - Gemini Live API <span class="team-badge">ATI 팀 협의</span></div>
+        <div class="subtitle">AI 비디오 분석 기반 실시간 핸드 감지 (Primary 백업)</div>
+
+        <!-- Pipeline -->
+        <div class="pipeline">
+            <!-- Stage 1 -->
+            <div class="stage">
+                <div class="stage-num">1</div>
+                <div class="stage-content">
+                    <div class="stage-title">Video Capture</div>
+                    <div class="stage-desc">각 테이블 카메라에서 RTSP/NDI 스트림 캡처</div>
+                    <div class="stage-tech">
+                        <span class="tech-tag">OpenCV</span>
+                        <span class="tech-tag">FFmpeg</span>
+                        <span class="tech-tag">RTSP</span>
+                        <span class="tech-tag">NDI</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="arrow-connector">
+                <svg viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+
+            <!-- Stage 2 -->
+            <div class="stage">
+                <div class="stage-num">2</div>
+                <div class="stage-content">
+                    <div class="stage-title">Frame Sampling</div>
+                    <div class="stage-desc">1 FPS로 프레임 추출 (비용 최적화)</div>
+                    <div class="stage-tech">
+                        <span class="tech-tag">1 FPS</span>
+                        <span class="tech-tag">JPEG 압축</span>
+                        <span class="tech-tag">Base64</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="arrow-connector">
+                <svg viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+
+            <!-- Stage 3 -->
+            <div class="stage">
+                <div class="stage-num">3</div>
+                <div class="stage-content">
+                    <div class="stage-title">Gemini Live API</div>
+                    <div class="stage-desc">WebSocket 기반 실시간 비디오 스트림 분석</div>
+                    <div class="stage-tech">
+                        <span class="tech-tag">Gemini 2.5 Flash</span>
+                        <span class="tech-tag">WebSocket</span>
+                        <span class="tech-tag">Streaming</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="arrow-connector">
+                <svg viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+            </div>
+
+            <!-- Stage 4 -->
+            <div class="stage">
+                <div class="stage-num">4</div>
+                <div class="stage-content">
+                    <div class="stage-title">AI Inference</div>
+                    <div class="stage-desc">포커 컨텍스트 프롬프트 기반 핸드/카드 인식</div>
+                    <div class="stage-tech">
+                        <span class="tech-tag">Card Detection</span>
+                        <span class="tech-tag">Hand Classification</span>
+                        <span class="tech-tag">Confidence Score</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Specs -->
+        <div class="specs-section">
+            <div class="specs-title">Performance Specs</div>
+            <div class="specs-grid">
+                <div class="spec-item">
+                    <div class="spec-value">85-95%</div>
+                    <div class="spec-label">신뢰도</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">1-3초</div>
+                    <div class="spec-label">지연시간</div>
+                </div>
+                <div class="spec-item">
+                    <div class="spec-value">$500-1K</div>
+                    <div class="spec-label">월 비용</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prompt Example -->
+        <div class="prompt-section">
+            <div class="prompt-title">Poker Context Prompt</div>
+            <div class="prompt-content">
+You are analyzing a live poker table video stream.<br>
+Detect: hand_start, hand_end, cards, player_actions<br>
+Output JSON with confidence scores (0.0-1.0).<br>
+Focus on: community cards, hole cards, pot movements
+            </div>
+        </div>
+
+        <!-- Output Format -->
+        <div class="output-section">
+            <div class="output-title">Output: AIVideoResult</div>
+            <div class="output-json">
+{<br>
+&nbsp;&nbsp;<span class="json-key">"table_id"</span>: <span class="json-string">"table_01"</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"hand_id"</span>: <span class="json-string">"hand_12345"</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"detected_cards"</span>: [<span class="json-string">"Ah"</span>, <span class="json-string">"Kd"</span>, <span class="json-string">"Qc"</span>],<br>
+&nbsp;&nbsp;<span class="json-key">"hand_rank"</span>: <span class="json-string">"FLUSH"</span>,<br>
+&nbsp;&nbsp;<span class="json-key">"confidence"</span>: <span class="json-value">0.92</span><br>
+}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

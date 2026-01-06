@@ -4,14 +4,52 @@
 
 ## 시스템 요구사항
 
-| 항목 | 최소 사양 |
-|------|----------|
-| DSM 버전 | 7.2 이상 |
-| RAM | 4GB 이상 |
-| CPU | x86_64 (Intel/AMD) |
-| 패키지 | Container Manager |
+| 항목 | 최소 사양 | 권장 사양 |
+|------|----------|----------|
+| DSM 버전 | 7.2 이상 | 7.2.1 이상 |
+| RAM | 4GB | 8GB |
+| CPU | x86_64 또는 ARM64 | Intel Celeron J4125+ |
+| 패키지 | Container Manager | Container Manager |
+| 저장공간 | 2GB | 10GB |
 
-## 배포 절차
+### 지원 모델
+
+| 아키텍처 | 모델 예시 |
+|----------|----------|
+| x86_64 (Intel/AMD) | DS920+, DS720+, DS220+ |
+| ARM64 | DS220j, DS223, DS124 |
+
+---
+
+## 빠른 시작 (원클릭 배포)
+
+### Windows에서 배포
+
+```powershell
+# PowerShell에서 실행
+cd deploy
+.\deploy-to-nas.ps1 -NasHost 192.168.1.100 -DbPassword "your_password"
+
+# pgAdmin 포함
+.\deploy-to-nas.ps1 -NasHost 192.168.1.100 -DbPassword "your_password" -WithPgAdmin
+```
+
+### NAS에서 직접 설치
+
+```bash
+# 1. 배포 패키지를 NAS로 복사 (USB, File Station, SCP 등)
+# 2. SSH로 NAS 접속
+ssh admin@NAS_IP
+
+# 3. 설치 스크립트 실행
+cd /volume1/docker/poker-capture
+chmod +x install.sh
+./install.sh
+```
+
+---
+
+## 수동 배포
 
 ### Step 1: Container Manager 설치
 
@@ -42,22 +80,24 @@ scp -r src/ admin@NAS_IP:/volume1/docker/poker-capture/app/
 scp deploy/Dockerfile admin@NAS_IP:/volume1/docker/poker-capture/app/
 scp deploy/requirements.txt admin@NAS_IP:/volume1/docker/poker-capture/app/
 scp deploy/docker-compose.yml admin@NAS_IP:/volume1/docker/poker-capture/
-scp deploy/.env.example admin@NAS_IP:/volume1/docker/poker-capture/.env
 ```
 
 ### Step 4: 환경 변수 설정
 
-NAS에서 `.env` 파일을 수정합니다:
-
 ```bash
 ssh admin@NAS_IP
 cd /volume1/docker/poker-capture
-nano .env
-```
 
-필수 설정:
-- `DB_PASSWORD`: PostgreSQL 비밀번호
-- `PGADMIN_PASSWORD`: pgAdmin 비밀번호
+# .env 파일 생성
+cat > .env << 'EOF'
+DB_PASSWORD=your_secure_password
+PGADMIN_PASSWORD=your_admin_password
+LOG_LEVEL=INFO
+VMIX_AUTO_RECORD=false
+EOF
+
+chmod 600 .env
+```
 
 ### Step 5: Docker 빌드 및 실행
 

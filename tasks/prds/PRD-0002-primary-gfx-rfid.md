@@ -43,7 +43,22 @@ PokerGFX RFID → JSON Export → Primary Processor → HandResult
 | **파일 감시** | JSON 파일 출력 후 파일 시스템 감시 |
 | **WebSocket** | 실시간 이벤트 스트림 (확인 필요) |
 
-### 2.2 소프트웨어 버전
+### 2.2 파일명 패턴
+
+PokerGFX는 다음 형식으로 JSON 파일을 출력합니다:
+
+```
+PGFX_live_data_export GameID=<GameID>.json
+PGFX_live_data_export.txt  (텍스트 형식, 무시)
+```
+
+| 패턴 | 예시 |
+|------|------|
+| `PGFX_live_data_export GameID=*.json` | `PGFX_live_data_export GameID=638962926097967686.json` |
+
+**GameID**는 세션 고유 식별자로, Windows 파일 시간(100ns 단위) 형식입니다.
+
+### 2.3 소프트웨어 버전
 
 - **PokerGFX 3.2** 이상
 - 엔터프라이즈/프로 라이선스 필요
@@ -441,7 +456,109 @@ class PokerGFXProcessor:
 
 ---
 
-## 7. 기술 스택
+## 7. 플레이어 성향 분석
+
+### 7.1 핵심 통계 지표
+
+PokerGFX JSON에서 제공하는 플레이어 통계를 활용한 성향 분석:
+
+| 지표 | 필드명 | 설명 |
+|------|--------|------|
+| **VPIP** | `VPIPPercent` | Voluntarily Put In Pot - 자발적 팟 참여율 |
+| **PFR** | `PreFlopRaisePercent` | Pre-Flop Raise - 프리플랍 레이즈율 |
+| **AF** | `AggressionFrequencyPercent` | Aggression Factor - 공격성 지수 |
+| **WTSD** | `WentToShowDownPercent` | Went To ShowDown - 쇼다운 도달률 |
+| **Winnings** | `CumulativeWinningsAmt` | 누적 수익 |
+
+### 7.2 플레이어 유형 분류
+
+VPIP/PFR 조합으로 플레이어 성향을 자동 분류:
+
+| 유형 | VPIP | PFR | 설명 | 타겟 여부 |
+|------|:----:|:---:|------|:--------:|
+| **Nit** | <15% | <10% | 타이트-패시브, 프리미엄만 플레이 | ❌ |
+| **TAG** | 15-25% | 15-20% | 타이트-어그레시브, 강한 핸드 | ❌ |
+| **LAG** | 25-35% | 20-30% | 루즈-어그레시브, 넓은 레인지 | ⚠️ |
+| **Fish** | >35% | <15% | 루즈-패시브, 콜링 스테이션 | ✅ |
+| **Maniac** | >40% | >30% | 극도로 공격적, 변동성 높음 | ⚠️ |
+
+> **Fish 판별**: VPIP 높고 PFR 낮으면 "자주 들어오는데 소극적인 플레이어"
+
+### 7.3 구현 코드
+
+```python
+from enum import Enum
+from dataclasses import dataclass
+
+class PlayerType(str, Enum):
+    NIT = "nit"
+    TAG = "tag"
+    LAG = "lag"
+    FISH = "fish"
+    MANIAC = "maniac"
+    UNKNOWN = "unknown"
+
+@dataclass
+class PlayerProfile:
+    name: str
+    vpip: float
+    pfr: float
+    af: float
+    wtsd: float
+    winnings: float
+    player_type: PlayerType
+    is_target: bool  # 방송 타겟 가치
+
+class PlayerAnalyzer:
+    """플레이어 성향 분석기"""
+
+    def classify_player(self, vpip: float, pfr: float) -> tuple[PlayerType, bool]:
+        """VPIP/PFR 기반 플레이어 유형 및 타겟 여부 판별"""
+        is_target = False
+
+        if vpip < 15 and pfr < 10:
+            player_type = PlayerType.NIT
+        elif 15 <= vpip <= 25 and 15 <= pfr <= 20:
+            player_type = PlayerType.TAG
+        elif 25 < vpip <= 35 and 20 <= pfr <= 30:
+            player_type = PlayerType.LAG
+            is_target = True  # 액션 많음
+        elif vpip > 35 and pfr < 15:
+            player_type = PlayerType.FISH
+            is_target = True  # 콜링 스테이션, 드라마 가능성
+        elif vpip > 40 and pfr > 30:
+            player_type = PlayerType.MANIAC
+            is_target = True  # 변동성 높음
+        else:
+            player_type = PlayerType.UNKNOWN
+
+        return player_type, is_target
+
+    def analyze_from_json(self, player_data: dict) -> PlayerProfile:
+        """JSON 플레이어 데이터에서 프로필 생성"""
+        vpip = float(player_data.get('VPIPPercent', 0))
+        pfr = float(player_data.get('PreFlopRaisePercent', 0))
+        af = float(player_data.get('AggressionFrequencyPercent', 0))
+        wtsd = float(player_data.get('WentToShowDownPercent', 0))
+        winnings = float(player_data.get('CumulativeWinningsAmt', 0))
+
+        player_type, is_target = self.classify_player(vpip, pfr)
+
+        return PlayerProfile(
+            name=player_data.get('Name', ''),
+            vpip=vpip,
+            pfr=pfr,
+            af=af,
+            wtsd=wtsd,
+            winnings=winnings,
+            player_type=player_type,
+            is_target=is_target
+        )
+```
+
+---
+
+## 8. 기술 스택
 
 | 컴포넌트 | 기술 | 버전 |
 |----------|------|------|
