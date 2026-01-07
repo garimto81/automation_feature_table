@@ -1,12 +1,15 @@
-"""Monitoring Service for real-time data synchronization (PRD-0008 Phase 2.2).
+"""Monitoring Service for real-time data synchronization (PRD-0008 Phase 2.2/2.3).
 
 This service acts as the bridge between the main capture system and the dashboard,
 synchronizing table status, hand grades, and recording sessions to the database.
+Also provides alert system for connection failures and Grade A hand detection.
 """
 
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+from src.dashboard.alerts import AlertManager
 
 if TYPE_CHECKING:
     from src.database.connection import DatabaseManager
@@ -33,10 +36,14 @@ class MonitoringService:
         self,
         db_manager: "DatabaseManager",
         monitoring_repo: "MonitoringRepository | None" = None,
+        alert_manager: AlertManager | None = None,
     ):
         self.db_manager = db_manager
         self._repo = monitoring_repo
         self._initialized = False
+
+        # Alert manager for notifications (PRD-0008 Phase 2.3)
+        self.alert_manager = alert_manager or AlertManager()
 
         # Cache for current state
         self._table_statuses: dict[str, dict[str, object]] = {}
@@ -89,6 +96,23 @@ class MonitoringService:
                 primary_connected=primary_connected,
                 secondary_connected=secondary_connected,
             )
+
+            # Check for connection state changes and generate alerts
+            prev_state = self._table_statuses.get(table_id, {})
+
+            if primary_connected is not None:
+                prev_primary = prev_state.get("primary_connected")
+                if prev_primary is True and primary_connected is False:
+                    self.alert_manager.alert_connection_lost(table_id, "primary")
+                elif prev_primary is False and primary_connected is True:
+                    self.alert_manager.alert_connection_restored(table_id, "primary")
+
+            if secondary_connected is not None:
+                prev_secondary = prev_state.get("secondary_connected")
+                if prev_secondary is True and secondary_connected is False:
+                    self.alert_manager.alert_connection_lost(table_id, "secondary")
+                elif prev_secondary is False and secondary_connected is True:
+                    self.alert_manager.alert_connection_restored(table_id, "secondary")
 
             # Update cache
             if table_id not in self._table_statuses:
@@ -171,14 +195,39 @@ class MonitoringService:
         self,
         hand_id: int,
         grade_result: "GradeResult",
+        table_id: str | None = None,
+        hand_number: int | None = None,
     ) -> None:
-        """Record hand grade for statistics.
+        """Record hand grade for statistics and generate alerts.
 
         Note: Grade is already saved via HandRepository.save_hand().
         This method is for explicit grade updates or recalculations.
+
+        Args:
+            hand_id: Database hand ID
+            grade_result: Grade result from HandGrader
+            table_id: Optional table identifier for alert
+            hand_number: Optional hand number for alert
         """
         if not self._initialized:
             return
+
+        # Generate alert for Grade A hands
+        if grade_result.grade == "A" and table_id and hand_number:
+            conditions_met = []
+            if grade_result.has_premium_hand:
+                conditions_met.append("premium_hand")
+            if grade_result.has_long_playtime:
+                conditions_met.append("long_playtime")
+            if grade_result.has_premium_board_combo:
+                conditions_met.append("board_combo")
+
+            self.alert_manager.alert_grade_a_hand(
+                table_id=table_id,
+                hand_number=hand_number,
+                hand_rank="Premium Hand",  # GradeResult doesn't store rank name
+                conditions_met=conditions_met,
+            )
 
         # The grade is saved via the existing HandRepository flow
         # This method can be used for explicit updates if needed
@@ -431,6 +480,11 @@ class MonitoringService:
                 },
                 "today_stats": today_stats,
                 "last_updated": datetime.now(UTC).isoformat(),
+                # Alert information (PRD-0008 Phase 2.3)
+                "alerts": {
+                    "active": [a.to_dict() for a in self.alert_manager.get_active_alerts()],
+                    "counts": self.alert_manager.get_alert_counts(),
+                },
             }
         except Exception as e:
             logger.error(f"Failed to get dashboard state: {e}")
