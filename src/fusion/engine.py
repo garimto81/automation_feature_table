@@ -277,8 +277,15 @@ class MultiTableFusionEngine:
         total_obj = aggregate["total"]
         total = int(total_obj) if isinstance(total_obj, (int, float)) else 0
         if total > 0:
-            aggregate["cross_validation_rate"] = float(int(aggregate.get("cross_validated", 0) or 0)) / total
-            aggregate["secondary_fallback_rate"] = float(int(aggregate.get("secondary_fallback", 0) or 0)) / total
-            aggregate["undetected_rate"] = float(int(aggregate.get("undetected", 0) or 0)) / total
+            cv = aggregate.get("cross_validated", 0) or 0
+            cv_int = int(cv) if isinstance(cv, (int, float)) else 0
+            sf = aggregate.get("secondary_fallback", 0) or 0
+            sf_int = int(sf) if isinstance(sf, (int, float)) else 0
+            ud = aggregate.get("undetected", 0) or 0
+            ud_int = int(ud) if isinstance(ud, (int, float)) else 0
+
+            aggregate["cross_validation_rate"] = float(cv_int) / total
+            aggregate["secondary_fallback_rate"] = float(sf_int) / total
+            aggregate["undetected_rate"] = float(ud_int) / total
 
         return aggregate

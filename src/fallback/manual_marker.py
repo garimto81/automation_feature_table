@@ -1,10 +1,11 @@
 """Manual marking interface for Plan B fallback."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Union
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,10 @@ class ManualMarker:
         table_id: str,
         fallback_reason: str | None = None,
         on_mark_created: Callable[[ManualMark], None] | None = None,
-        on_hand_completed: Callable[[PairedMark], None] | None = None,
+        on_hand_completed: Union[
+            Callable[[PairedMark], None],
+            Callable[[PairedMark], Awaitable[None]],
+        ] | None = None,
     ):
         """Initialize manual marker.
 
@@ -285,7 +289,10 @@ class MultiTableManualMarker:
     def __init__(
         self,
         on_mark_created: Callable[[ManualMark], None] | None = None,
-        on_hand_completed: Callable[[PairedMark], None] | None = None,
+        on_hand_completed: Union[
+            Callable[[PairedMark], None],
+            Callable[[PairedMark], Awaitable[None]],
+        ] | None = None,
     ):
         self._markers: dict[str, ManualMarker] = {}
         self._on_mark_created = on_mark_created

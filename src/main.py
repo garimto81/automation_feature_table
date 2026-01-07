@@ -504,9 +504,10 @@ class PokerHandCaptureSystem:
             logger.warning("Manual marking only available in fallback mode")
             return
 
-        marker = self.manual_markers.get_marker(
-            table_id, self.failure_detector.state.to_dict().get("last_failure_reason")
-        )
+        state_dict = self.failure_detector.state.to_dict()
+        reason = state_dict.get("last_failure_reason")
+        fallback_reason = str(reason) if reason else None
+        marker = self.manual_markers.get_marker(table_id, fallback_reason)
         marker.mark_hand_start(operator)
 
     def mark_hand_end(
@@ -520,7 +521,7 @@ class PokerHandCaptureSystem:
         marker = self.manual_markers.get_marker(table_id)
         marker.mark_hand_end(operator)
 
-    def get_system_stats(self) -> dict:
+    def get_system_stats(self) -> dict[str, object]:
         """Get comprehensive system statistics."""
         stats = {
             "fusion": self.fusion_engine.get_aggregate_stats(),
@@ -551,7 +552,7 @@ async def main() -> None:
     # Handle shutdown signals
     loop = asyncio.get_event_loop()
 
-    def shutdown_handler():
+    def shutdown_handler() -> None:
         logger.info("Shutdown signal received")
         system._running = False
 

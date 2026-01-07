@@ -3,9 +3,14 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 if TYPE_CHECKING:
     from src.config.settings import DatabaseSettings
@@ -18,8 +23,8 @@ class DatabaseManager:
 
     def __init__(self, settings: "DatabaseSettings"):
         self.settings = settings
-        self._engine: object | None = None
-        self._session_factory: object | None = None
+        self._engine: AsyncEngine | None = None
+        self._session_factory: async_sessionmaker[AsyncSession] | None = None
 
     @property
     def connection_string(self) -> str:

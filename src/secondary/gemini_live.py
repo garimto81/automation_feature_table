@@ -6,9 +6,9 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 
 import websockets
-from websockets.legacy.client import WebSocketClientProtocol
 
 from src.config.settings import GeminiSettings
 from src.models.hand import AIVideoResult, Card, HandRank
@@ -57,7 +57,7 @@ If nothing significant is detected, use event: "none" with low confidence."""
     def __init__(self, settings: GeminiSettings, table_id: str):
         self.settings = settings
         self.table_id = table_id
-        self._ws: WebSocketClientProtocol | None = None
+        self._ws: Any = None  # WebSocket connection (type varies by websockets version)
         self._running = False
         self._session_start: datetime | None = None
         self._retry_count = 0
@@ -92,7 +92,10 @@ If nothing significant is detected, use event: "none" with low confidence."""
 
                 # Wait for setup confirmation
                 response = await self._ws.recv()
-                logger.debug(f"Setup response: {response}")
+                response_str = (
+                    response.decode("utf-8") if isinstance(response, bytes) else response
+                )
+                logger.debug(f"Setup response: {response_str}")
 
                 self._session_start = datetime.now()
                 logger.info(f"Connected to Gemini Live API for {self.table_id}")
@@ -145,7 +148,7 @@ If nothing significant is detected, use event: "none" with low confidence."""
             Delay in seconds (1, 2, 4, 8 max)
         """
         delay = min(2 ** self._retry_count, 8.0)
-        return delay
+        return float(delay)
 
     async def _ensure_connection(self) -> None:
         """Ensure connection is active, reconnect if needed."""

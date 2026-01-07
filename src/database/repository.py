@@ -36,13 +36,15 @@ class HandRepository:
                 started_at=result.timestamp,
                 ended_at=datetime.now(UTC),
                 community_cards=(
-                    [str(c) for c in result.community_cards]
-                    if result.community_cards
+                    [str(c) for c in result.primary_result.community_cards]
+                    if result.primary_result and result.primary_result.community_cards
                     else None
                 ),
                 players_data=result.players_data if hasattr(result, "players_data") else None,
                 hand_rank=result.rank_name,
-                rank_value=result.rank_value,
+                rank_value=(
+                    result.primary_result.rank_value if result.primary_result else None
+                ),
                 is_premium=result.is_premium,
                 source=result.source.value,
                 primary_confidence=(
@@ -113,7 +115,7 @@ class HandRepository:
         marked_at: datetime,
         hand_id: int | None = None,
         fallback_reason: str | None = None,
-        automation_state: dict | None = None,
+        automation_state: dict[str, object] | None = None,
         marked_by: str | None = None,
     ) -> ManualMark:
         """Save a manual mark record."""

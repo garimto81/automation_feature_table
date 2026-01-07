@@ -154,7 +154,7 @@ class RecordingManager:
             )
         else:
             error_msg = result.error_message if result else "Unknown error"
-            session.fail(error_msg)
+            session.fail(error_msg or "Unknown error")
             self._add_to_history(session)
 
         return session
@@ -225,7 +225,7 @@ class RecordingManager:
 
         return sessions[:limit]
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, object]:
         """Get recording statistics."""
         total_completed = len([s for s in self._completed_sessions if s.is_completed])
         total_failed = len(

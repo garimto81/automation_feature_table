@@ -27,7 +27,7 @@ def mock_repo():
     repo.get_all_table_statuses = AsyncMock(return_value=[])
     repo.get_grade_distribution = AsyncMock(return_value={})
     repo.get_active_recording_sessions = AsyncMock(return_value=[])
-    repo.get_latest_health_logs = AsyncMock(return_value={})
+    repo.get_all_latest_health = AsyncMock(return_value={})
     repo.get_today_stats = AsyncMock(return_value={})
     return repo
 

@@ -161,7 +161,7 @@ class HandClassifier:
             if hole_cards_obj and isinstance(hole_cards_obj[0], str):
                 hole_cards = [Card.from_string(str(c)) for c in hole_cards_obj]
             else:
-                hole_cards = list(hole_cards_obj)  # type: ignore[arg-type]
+                hole_cards = [c for c in hole_cards_obj if isinstance(c, Card)]
 
             try:
                 rank_value = self.evaluate(hole_cards, community_cards)

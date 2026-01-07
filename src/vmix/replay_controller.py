@@ -141,8 +141,8 @@ class ReplayController:
             duration = int((mark_out_time - mark_in_time).total_seconds())
 
             result = HandRecordingResult(
-                table_id=table_id,
-                hand_number=hand_number,
+                table_id=table_id or "unknown",
+                hand_number=hand_number or 0,
                 mark_in_time=mark_in_time,
                 mark_out_time=mark_out_time,
                 duration_seconds=duration,
@@ -173,9 +173,9 @@ class ReplayController:
             logger.error(f"{error_msg} for hand {table_id} #{hand_number}")
 
             result = HandRecordingResult(
-                table_id=table_id,
-                hand_number=hand_number,
-                mark_in_time=mark_in_time,
+                table_id=table_id or "unknown",
+                hand_number=hand_number or 0,
+                mark_in_time=mark_in_time or mark_out_time,
                 mark_out_time=mark_out_time,
                 duration_seconds=0,
                 success=False,

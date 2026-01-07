@@ -76,10 +76,12 @@ class PlayerInfo:
         and PRD-0002 PokerGFX format (PlayerNum, Name, HoleCards, EndStackAmt).
         """
         # Support both key formats
-        seat = int(data.get("seat") or data.get("PlayerNum", 0) or 0)
+        seat_val = data.get("seat") or data.get("PlayerNum", 0) or 0
+        seat = int(seat_val) if isinstance(seat_val, (int, float, str)) else 0
         name = str(data.get("name") or data.get("Name", ""))
         raw_cards = data.get("hole_cards") or data.get("HoleCards", [])
-        stack = int(data.get("stack") or data.get("EndStackAmt", 0) or 0)
+        stack_val = data.get("stack") or data.get("EndStackAmt", 0) or 0
+        stack = int(stack_val) if isinstance(stack_val, (int, float, str)) else 0
 
         if not isinstance(raw_cards, list):
             raw_cards = []
@@ -104,10 +106,12 @@ class HandAction:
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "HandAction":
         """Create from dictionary."""
+        amount_val = data.get("amount", 0) or 0
+        amount = int(amount_val) if isinstance(amount_val, (int, float, str)) else 0
         return cls(
             player=str(data["player"]),
             action=str(data["action"]),
-            amount=int(data.get("amount", 0) or 0),
+            amount=amount,
             street=str(data.get("street", "")),
         )
 

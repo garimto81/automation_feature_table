@@ -215,6 +215,7 @@ class MonitoringService:
             session = await self.repo.create_recording_session(
                 session_id=session_id,
                 table_id=table_id,
+                start_time=datetime.now(UTC),
             )
 
             if session:
@@ -276,10 +277,15 @@ class MonitoringService:
             return
 
         try:
+            file_size_mb = (
+                session.file_size_bytes / (1024 * 1024)
+                if session.file_size_bytes
+                else None
+            )
             await self.repo.update_recording_session(
                 session_id=session_id,
                 file_path=session.file_path,
-                file_size_mb=session.file_size_mb,
+                file_size_mb=file_size_mb,
             )
         except Exception as e:
             logger.error(f"Failed to update recording file info: {e}")
@@ -386,7 +392,7 @@ class MonitoringService:
             table_statuses = await self.repo.get_all_table_statuses()
             grade_dist = await self.repo.get_grade_distribution()
             active_recordings = await self.repo.get_active_recording_sessions()
-            health_logs = await self.repo.get_latest_health_logs()
+            health_logs = await self.repo.get_all_latest_health()
             today_stats = await self.repo.get_today_stats()
 
             return {
@@ -396,7 +402,9 @@ class MonitoringService:
                         "primary_connected": s.primary_connected,
                         "secondary_connected": s.secondary_connected,
                         "current_hand_number": s.current_hand_number,
-                        "hand_start_time": s.hand_start_time.isoformat() if s.hand_start_time else None,
+                        "hand_start_time": (
+                            s.hand_start_time.isoformat() if s.hand_start_time else None
+                        ),
                         "last_fusion_result": s.last_fusion_result,
                     }
                     for s in table_statuses

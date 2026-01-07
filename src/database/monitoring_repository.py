@@ -96,7 +96,7 @@ class MonitoringRepository:
         status: str,
         latency_ms: int | None = None,
         message: str | None = None,
-        details: dict | None = None,
+        details: dict[str, object] | None = None,
     ) -> SystemHealthLog:
         """Log a system health check."""
         async with self.db_manager.session() as session:
@@ -171,9 +171,10 @@ class MonitoringRepository:
             result = await session.execute(
                 delete(SystemHealthLog).where(SystemHealthLog.created_at < before)
             )
-            deleted = result.rowcount
-            logger.info(f"Deleted {deleted} old health logs")
-            return deleted
+            deleted = result.rowcount if hasattr(result, 'rowcount') else 0
+            count = int(deleted) if deleted else 0
+            logger.info(f"Deleted {count} old health logs")
+            return count
 
     # =========================================================================
     # Recording Sessions
@@ -316,7 +317,7 @@ class MonitoringRepository:
             result = await session.execute(query)
             return result.scalar() or 0
 
-    async def get_today_stats(self) -> dict:
+    async def get_today_stats(self) -> dict[str, object]:
         """Get aggregated stats for today."""
         today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 

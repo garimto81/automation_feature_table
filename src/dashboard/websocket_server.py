@@ -26,14 +26,14 @@ logger = logging.getLogger(__name__)
 class DashboardState:
     """Current dashboard state for broadcasting."""
 
-    table_statuses: list[dict] = field(default_factory=list)
+    table_statuses: list[dict[str, Any]] = field(default_factory=list)
     grade_distribution: dict[str, int] = field(default_factory=dict)
-    recording_sessions: list[dict] = field(default_factory=list)
-    system_health: dict[str, dict] = field(default_factory=dict)
+    recording_sessions: list[dict[str, Any]] = field(default_factory=list)
+    system_health: dict[str, dict[str, Any]] = field(default_factory=dict)
     today_stats: dict[str, Any] = field(default_factory=dict)
     last_updated: str = ""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "table_statuses": self.table_statuses,
@@ -48,7 +48,7 @@ class DashboardState:
 class ConnectionManager:
     """Manages WebSocket connections."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket) -> None:
@@ -62,7 +62,7 @@ class ConnectionManager:
         self.active_connections.discard(websocket)
         logger.info(f"Dashboard client disconnected. Total: {len(self.active_connections)}")
 
-    async def broadcast(self, message: dict) -> None:
+    async def broadcast(self, message: dict[str, Any]) -> None:
         """Broadcast message to all connected clients."""
         if not self.active_connections:
             return
@@ -98,7 +98,7 @@ class DashboardWebSocket:
         self.monitoring_repo = monitoring_repo
         self.broadcast_interval = broadcast_interval
         self.manager = ConnectionManager()
-        self._broadcast_task: asyncio.Task | None = None
+        self._broadcast_task: asyncio.Task[None] | None = None
         self._running = False
         self._state = DashboardState()
 
@@ -171,7 +171,11 @@ class DashboardWebSocket:
                     }
                     for s in table_statuses
                 ],
-                grade_distribution=today_stats.get("grade_distribution", {}),
+                grade_distribution=(
+                    today_stats.get("grade_distribution")  # type: ignore[arg-type]
+                    if isinstance(today_stats.get("grade_distribution"), dict)
+                    else {}
+                ),
                 recording_sessions=[
                     {
                         "session_id": rs.session_id,
@@ -271,7 +275,7 @@ class DashboardWebSocket:
         return self._state
 
 
-def create_dashboard_routes(dashboard: DashboardWebSocket):
+def create_dashboard_routes(dashboard: DashboardWebSocket) -> None:
     """Create FastAPI routes for the dashboard WebSocket.
 
     Usage:
