@@ -40,7 +40,7 @@ services:
     volumes:
       - /volume1/docker/postgresql/data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "6432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U poker -d poker_hands"]
       interval: 10s
