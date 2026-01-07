@@ -176,3 +176,94 @@ class ManualMark(Base):
 
     # Relationships
     hand: Mapped[Optional["Hand"]] = relationship("Hand", back_populates="manual_marks")
+
+
+# ============================================================================
+# PRD-0008: 모니터링 대시보드 테이블
+# ============================================================================
+
+
+class TableStatus(Base):
+    """Real-time table status for monitoring dashboard (PRD-0008)."""
+
+    __tablename__ = "table_status"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+
+    # Connection status
+    primary_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    secondary_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Current hand info
+    current_hand_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_hand_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hand_start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Fusion status
+    last_fusion_result: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # validated, review, manual
+
+    # Timestamps
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class SystemHealthLog(Base):
+    """System health log for monitoring dashboard (PRD-0008)."""
+
+    __tablename__ = "system_health_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    service_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    # Status
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # connected, disconnected, error, warning
+
+    # Metrics
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Message
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+
+
+class RecordingSession(Base):
+    """Recording session tracking for monitoring dashboard (PRD-0008)."""
+
+    __tablename__ = "recording_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    table_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
+    # Status
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="recording"
+    )  # recording, stopped, completed, error
+
+    # Timing
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # File info
+    file_size_mb: Mapped[float | None] = mapped_column(Float, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # vMix info
+    vmix_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

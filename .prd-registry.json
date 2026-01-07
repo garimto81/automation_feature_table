@@ -1,0 +1,58 @@
+{
+  "version": "1.0.0",
+  "project_name": "automation_feature_table",
+  "last_sync": "2026-01-07T00:00:00Z",
+  "next_prd_number": 9,
+  "prds": {
+    "PRD-0001": {
+      "title": "포커 핸드 자동 캡처 및 분류 시스템",
+      "status": "In Progress",
+      "priority": "P0",
+      "local_path": "tasks/prds/PRD-0001-poker-hand-auto-capture.md",
+      "checklist_path": "docs/checklists/PRD-0001.md"
+    },
+    "PRD-0002": {
+      "title": "Primary 소스 (PokerGFX RFID)",
+      "status": "In Progress",
+      "priority": "P0",
+      "local_path": "tasks/prds/PRD-0002-primary-gfx-rfid.md",
+      "checklist_path": "docs/checklists/PRD-0002.md"
+    },
+    "PRD-0003": {
+      "title": "Secondary 소스 (Gemini Live)",
+      "status": "In Progress",
+      "priority": "P1",
+      "local_path": "tasks/prds/PRD-0003-secondary-gemini-live.md",
+      "checklist_path": "docs/checklists/PRD-0003.md"
+    },
+    "PRD-0004": {
+      "title": "Fusion Engine",
+      "status": "In Progress",
+      "priority": "P0",
+      "local_path": "tasks/prds/PRD-0004-fusion-engine.md",
+      "checklist_path": "docs/checklists/PRD-0004.md"
+    },
+    "PRD-0005": {
+      "title": "통합 데이터베이스 및 자막 데이터 시스템",
+      "status": "Draft",
+      "priority": "P1",
+      "local_path": "tasks/prds/PRD-0005-integrated-db-subtitle-system.md",
+      "checklist_path": "docs/checklists/PRD-0005.md"
+    },
+    "PRD-0007": {
+      "title": "커스텀 RFID 클라이언트",
+      "status": "Draft",
+      "priority": "P2",
+      "local_path": "tasks/prds/PRD-0007-custom-rfid-client.md",
+      "checklist_path": "docs/checklists/PRD-0007.md"
+    },
+    "PRD-0008": {
+      "title": "모니터링 대시보드 구현",
+      "status": "Draft",
+      "priority": "P1",
+      "local_path": "tasks/prds/PRD-0008-monitoring-dashboard.md",
+      "checklist_path": "docs/checklists/PRD-0008.md",
+      "created_at": "2026-01-07"
+    }
+  }
+}

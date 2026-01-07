@@ -23,6 +23,9 @@ dependencies = [
     # File watching (NAS JSON mode)
     "watchdog>=3.0.0",
     "aiofiles>=23.0.0",
+    # Dashboard (PRD-0008)
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
 ]
 
 [project.optional-dependencies]
