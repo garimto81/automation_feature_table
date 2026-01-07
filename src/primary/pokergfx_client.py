@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import websockets
+from websockets.legacy.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosed
 
 from src.config.settings import PokerGFXSettings
-from src.models.hand import Card, HandResult, PlayerInfo
+from src.models.hand import Card, HandRank, HandResult, PlayerInfo
 from src.primary.hand_classifier import HandClassifier
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class PokerGFXClient:
     ):
         self.settings = settings
         self.classifier = classifier or HandClassifier()
-        self._ws: websockets.WebSocketClientProtocol | None = None
+        self._ws: WebSocketClientProtocol | None = None
         self._running = False
         self._handlers: list[Callable[[HandResult], None]] = []
         self._active_sessions: dict[str, HandSession] = {}  # table_id -> session
@@ -85,7 +86,7 @@ class PokerGFXClient:
 
         return False
 
-    def _validate_cards(self, players: list[dict], community_cards: list[Card]) -> bool:
+    def _validate_cards(self, players: list[dict[str, object]], community_cards: list[Card]) -> bool:
         """Validate that all cards are unique (no duplicates in 52-card deck)."""
         seen_cards = set()
 
@@ -111,13 +112,12 @@ class PokerGFXClient:
 
         return True
 
-    def _handle_hand_start(self, data: dict) -> None:
+    def _handle_hand_start(self, data: dict[str, object]) -> None:
         """Handle hand_start event - track session."""
-        table_id = data.get("table_id", "unknown")
-        hand_number = data.get("hand_number", 0)
-        timestamp = datetime.fromisoformat(
-            data.get("timestamp", datetime.now().isoformat())
-        )
+        table_id = str(data.get("table_id", "unknown"))
+        hand_number = int(data.get("hand_number", 0) or 0)
+        timestamp_str = str(data.get("timestamp", datetime.now().isoformat()))
+        timestamp = datetime.fromisoformat(timestamp_str)
 
         session = HandSession(
             table_id=table_id,
@@ -134,13 +134,12 @@ class PokerGFXClient:
             f"(BB: {session.big_blind})"
         )
 
-    def _handle_hand_end(self, data: dict) -> None:
+    def _handle_hand_end(self, data: dict[str, object]) -> None:
         """Handle hand_end event - mark session complete."""
-        table_id = data.get("table_id", "unknown")
-        hand_number = data.get("hand_number", 0)
-        timestamp = datetime.fromisoformat(
-            data.get("timestamp", datetime.now().isoformat())
-        )
+        table_id = str(data.get("table_id", "unknown"))
+        hand_number = int(data.get("hand_number", 0) or 0)
+        timestamp_str = str(data.get("timestamp", datetime.now().isoformat()))
+        timestamp = datetime.fromisoformat(timestamp_str)
 
         session = self._active_sessions.get(table_id)
         if session and session.hand_number == hand_number:
@@ -152,7 +151,7 @@ class PokerGFXClient:
                 f"(duration: {duration:.1f}s, winner: {data.get('winner')})"
             )
 
-    def _parse_hand_event(self, data: dict) -> HandResult | None:
+    def _parse_hand_event(self, data: dict[str, object]) -> HandResult | None:
         """Parse PokerGFX JSON event into HandResult."""
         try:
             event_type = data.get("event")
@@ -173,8 +172,13 @@ class PokerGFXClient:
 
             # Parse players
             players = []
-            for p in data.get("players", []):
-                player = PlayerInfo.from_dict(p)
+            players_raw = data.get("players", [])
+            if not isinstance(players_raw, list):
+                players_raw = []
+            for p in players_raw:
+                if not isinstance(p, dict):
+                    continue
+                player = PlayerInfo.from_dict(p)  # type: ignore[arg-type]
                 players.append({
                     "name": player.name,
                     "seat": player.seat,
@@ -183,8 +187,11 @@ class PokerGFXClient:
                 })
 
             # Parse community cards
+            comm_cards_raw = data.get("community_cards", [])
+            if not isinstance(comm_cards_raw, list):
+                comm_cards_raw = []
             community_cards = [
-                Card.from_string(c) for c in data.get("community_cards", [])
+                Card.from_string(str(c)) for c in comm_cards_raw
             ]
 
             # Validate no duplicate cards
@@ -200,30 +207,39 @@ class PokerGFXClient:
                 return None
 
             # Build players showdown info
-            players_showdown = []
+            players_showdown: list[dict[str, object]] = []
             for p in players:
-                if p.get("hole_cards"):
-                    result = self.classifier.classify(p["hole_cards"], community_cards)
+                hole_cards_obj = p.get("hole_cards")
+                if hole_cards_obj and isinstance(hole_cards_obj, list):
+                    result = self.classifier.classify(list(hole_cards_obj), community_cards)  # type: ignore[arg-type]
                     players_showdown.append({
                         "player": p["name"],
                         "rank_value": result["rank_value"],
                         "rank_name": result["rank_name"],
                     })
 
+            best_hand_rank = best.get("hand_rank")
+            if not isinstance(best_hand_rank, HandRank):
+                return None
+
+            best_rank_value = best.get("rank_value")
+            if not isinstance(best_rank_value, int):
+                return None
+
             return HandResult(
-                table_id=data.get("table_id", "unknown"),
-                hand_number=data.get("hand_number", 0),
-                hand_rank=best["hand_rank"],
-                rank_value=best["rank_value"],
-                is_premium=best["hand_rank"].is_premium,
+                table_id=str(data.get("table_id", "unknown")),
+                hand_number=int(data.get("hand_number", 0) or 0),
+                hand_rank=best_hand_rank,
+                rank_value=best_rank_value,
+                is_premium=best_hand_rank.is_premium,
                 confidence=1.0,  # RFID data is 100% accurate
                 players_showdown=players_showdown,
-                pot_size=data.get("pot", 0),
+                pot_size=int(data.get("pot", 0) or 0),
                 timestamp=datetime.fromisoformat(
-                    data.get("timestamp", datetime.now().isoformat())
+                    str(data.get("timestamp", datetime.now().isoformat()))
                 ),
                 community_cards=community_cards,
-                winner=data.get("winner"),
+                winner=str(data.get("winner")) if data.get("winner") else None,
             )
 
         except Exception as e:
@@ -238,6 +254,9 @@ class PokerGFXClient:
             try:
                 if not self._ws:
                     await self.connect()
+
+                if self._ws is None:
+                    raise RuntimeError("WebSocket connection failed")
 
                 async for message in self._ws:
                     if not self._running:
@@ -290,6 +309,9 @@ class PokerGFXClient:
         """
         if not self._ws:
             await self.connect()
+
+        if self._ws is None:
+            raise RuntimeError("WebSocket connection failed")
 
         request = {
             "action": "get_history",

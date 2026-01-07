@@ -28,7 +28,7 @@ class ManualMark:
     notes: str | None = None
     fallback_reason: str | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for storage."""
         return {
             "table_id": self.table_id,
@@ -258,7 +258,7 @@ class ManualMarker:
         """Get all highlight marks."""
         return [m for m in self._marks if m.mark_type == MarkType.HIGHLIGHT]
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, object]:
         """Get marking statistics."""
         return {
             "table_id": self.table_id,
@@ -310,7 +310,7 @@ class MultiTableManualMarker:
         """Get all markers."""
         return self._markers.copy()
 
-    def get_all_stats(self) -> dict[str, dict]:
+    def get_all_stats(self) -> dict[str, dict[str, object]]:
         """Get stats for all tables."""
         return {
             table_id: marker.get_stats()

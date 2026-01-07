@@ -98,7 +98,7 @@ class RecordingSession:
         self.ended_at = datetime.now()
         logger.info(f"Recording session cancelled: {self.table_id} #{self.hand_number}")
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         """Convert session to dictionary."""
         return {
             "table_id": self.table_id,

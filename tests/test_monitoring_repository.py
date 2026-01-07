@@ -1,6 +1,6 @@
 """Tests for MonitoringRepository (PRD-0008)."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -107,7 +107,7 @@ class TestRecordingSessionOperations:
         mock_db_manager.session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_db_manager.session.return_value.__aexit__ = AsyncMock()
 
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
         await repository.create_recording_session(
             session_id="session_001",
             table_id="table_a",
@@ -126,7 +126,7 @@ class TestRecordingSessionOperations:
         existing_session = RecordingSession(
             session_id="session_001",
             table_id="table_a",
-            start_time=datetime.utcnow(),
+            start_time=datetime.now(UTC),
             status="recording",
         )
 
@@ -139,7 +139,7 @@ class TestRecordingSessionOperations:
         mock_db_manager.session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_db_manager.session.return_value.__aexit__ = AsyncMock()
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(UTC)
         await repository.update_recording_session(
             session_id="session_001",
             status="completed",
@@ -224,7 +224,7 @@ class TestRecordingSessionModel:
 
     def test_recording_session_creation(self):
         """Test creating a RecordingSession."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         session = RecordingSession(
             session_id="rec_001",
             table_id="table_a",
@@ -241,8 +241,8 @@ class TestRecordingSessionModel:
         session = RecordingSession(
             session_id="rec_002",
             table_id="table_b",
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow() + timedelta(hours=1),
+            start_time=datetime.now(UTC),
+            end_time=datetime.now(UTC) + timedelta(hours=1),
             status="completed",
             file_size_mb=2048.5,
             file_path="/recordings/session_002.mp4",

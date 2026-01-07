@@ -69,19 +69,21 @@ class PlayerInfo:
     stack: int = 0
 
     @classmethod
-    def from_dict(cls, data: dict) -> "PlayerInfo":
+    def from_dict(cls, data: dict[str, object]) -> "PlayerInfo":
         """Create from dictionary.
 
         Supports both standard format (seat, name, hole_cards, stack)
         and PRD-0002 PokerGFX format (PlayerNum, Name, HoleCards, EndStackAmt).
         """
         # Support both key formats
-        seat = data.get("seat") or data.get("PlayerNum", 0)
-        name = data.get("name") or data.get("Name", "")
+        seat = int(data.get("seat") or data.get("PlayerNum", 0) or 0)
+        name = str(data.get("name") or data.get("Name", ""))
         raw_cards = data.get("hole_cards") or data.get("HoleCards", [])
-        stack = data.get("stack") or data.get("EndStackAmt", 0)
+        stack = int(data.get("stack") or data.get("EndStackAmt", 0) or 0)
 
-        hole_cards = [Card.from_string(c) for c in raw_cards]
+        if not isinstance(raw_cards, list):
+            raw_cards = []
+        hole_cards = [Card.from_string(str(c)) for c in raw_cards]
         return cls(
             seat=seat,
             name=name,
@@ -100,13 +102,13 @@ class HandAction:
     street: str = ""  # preflop, flop, turn, river
 
     @classmethod
-    def from_dict(cls, data: dict) -> "HandAction":
+    def from_dict(cls, data: dict[str, object]) -> "HandAction":
         """Create from dictionary."""
         return cls(
-            player=data["player"],
-            action=data["action"],
-            amount=data.get("amount", 0),
-            street=data.get("street", ""),
+            player=str(data["player"]),
+            action=str(data["action"]),
+            amount=int(data.get("amount", 0) or 0),
+            street=str(data.get("street", "")),
         )
 
 
@@ -120,7 +122,7 @@ class HandResult:
     rank_value: int  # Raw phevaluator rank value
     is_premium: bool
     confidence: float  # Always 1.0 for RFID data
-    players_showdown: list[dict]
+    players_showdown: list[dict[str, object]]
     pot_size: int
     timestamp: datetime
     community_cards: list[Card] = field(default_factory=list)

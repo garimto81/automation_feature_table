@@ -6,9 +6,11 @@ from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 
 from src.config.settings import VideoSettings
 
@@ -20,7 +22,7 @@ class VideoFrame:
     """Captured video frame with metadata."""
 
     table_id: str
-    frame: np.ndarray
+    frame: npt.NDArray[np.uint8]
     timestamp: datetime
     frame_number: int
 
@@ -39,7 +41,7 @@ class VideoCapture:
         self._captures: dict[str, cv2.VideoCapture] = {}
         self._running = False
         self._frame_counts: dict[str, int] = {}
-        self._buffers: dict[str, deque] = {}
+        self._buffers: dict[str, deque[VideoFrame]] = {}
         self._target_width = 640  # Optimize for API cost/quality balance
 
     def add_stream(self, table_id: str, url: str) -> bool:
@@ -85,9 +87,9 @@ class VideoCapture:
 
     def _resize_frame(
         self,
-        frame: np.ndarray,
+        frame: npt.NDArray[np.uint8],
         target_width: int | None = None
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.uint8]:
         """
         Resize frame for optimization (only downscale, never upscale).
 
@@ -116,7 +118,7 @@ class VideoCapture:
             interpolation=cv2.INTER_AREA
         )
 
-        return resized
+        return cast(npt.NDArray[np.uint8], resized)
 
     def capture_frame(self, table_id: str) -> VideoFrame | None:
         """
@@ -140,7 +142,7 @@ class VideoCapture:
             return None
 
         # Resize frame for optimization
-        frame = self._resize_frame(frame)
+        frame = self._resize_frame(cast(npt.NDArray[np.uint8], frame))
 
         self._frame_counts[table_id] += 1
 
@@ -226,11 +228,12 @@ class VideoCapture:
 
     def get_latest_frame(self, table_id: str) -> VideoFrame | None:
         """Get the most recent frame from buffer."""
-        if table_id in self._buffers and self._buffers[table_id]:
-            return self._buffers[table_id][-1]
+        buffer = self._buffers.get(table_id)
+        if buffer:
+            return buffer[-1]
         return None
 
-    def get_stream_info(self, table_id: str) -> dict | None:
+    def get_stream_info(self, table_id: str) -> dict[str, object] | None:
         """Get information about a stream."""
         if table_id not in self._captures:
             return None

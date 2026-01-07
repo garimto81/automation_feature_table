@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 
 import websockets
+from websockets.legacy.client import WebSocketClientProtocol
 
 from src.config.settings import GeminiSettings
 from src.models.hand import AIVideoResult, Card, HandRank
@@ -56,7 +57,7 @@ If nothing significant is detected, use event: "none" with low confidence."""
     def __init__(self, settings: GeminiSettings, table_id: str):
         self.settings = settings
         self.table_id = table_id
-        self._ws: websockets.WebSocketClientProtocol | None = None
+        self._ws: WebSocketClientProtocol | None = None
         self._running = False
         self._session_start: datetime | None = None
         self._retry_count = 0

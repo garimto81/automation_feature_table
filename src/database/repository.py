@@ -1,7 +1,7 @@
 """Repository for database CRUD operations."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import select
@@ -34,7 +34,7 @@ class HandRepository:
                 table_id=result.table_id,
                 hand_number=result.hand_number,
                 started_at=result.timestamp,
-                ended_at=datetime.utcnow(),
+                ended_at=datetime.now(UTC),
                 community_cards=(
                     [str(c) for c in result.community_cards]
                     if result.community_cards

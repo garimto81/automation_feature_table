@@ -18,8 +18,8 @@ class DatabaseManager:
 
     def __init__(self, settings: "DatabaseSettings"):
         self.settings = settings
-        self._engine = None
-        self._session_factory = None
+        self._engine: object | None = None
+        self._session_factory: object | None = None
 
     @property
     def connection_string(self) -> str:

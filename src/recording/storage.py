@@ -178,7 +178,7 @@ class StorageManager:
 
         return files_to_delete
 
-    def get_storage_stats(self) -> dict:
+    def get_storage_stats(self) -> dict[str, object]:
         """Get storage statistics."""
         total_size = 0
         file_count = 0

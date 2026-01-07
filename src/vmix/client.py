@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree
 
 import httpx
@@ -21,7 +21,7 @@ class VMixState:
     recording_duration: int = 0
     streaming: bool = False
     replay_recording: bool = False
-    inputs: list[dict] = field(default_factory=list)
+    inputs: list[dict[str, Any]] = field(default_factory=list)
 
 
 class VMixClient:
@@ -42,7 +42,7 @@ class VMixClient:
             self._client = httpx.AsyncClient(timeout=self.settings.timeout)
         return self._client
 
-    async def _call_api(self, function: str, **params) -> bool:
+    async def _call_api(self, function: str, **params: str) -> bool:
         """Call vMix API function.
 
         Args:

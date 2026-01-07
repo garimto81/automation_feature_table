@@ -194,18 +194,18 @@ class FusionEngine:
 
         return False
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, object]:
         """Get fusion statistics."""
         total = self._stats["total"]
 
         if total == 0:
-            return self._stats
+            return dict(self._stats)
 
         return {
             **self._stats,
-            "cross_validation_rate": self._stats["cross_validated"] / total,
-            "secondary_fallback_rate": self._stats["secondary_fallback"] / total,
-            "undetected_rate": self._stats["undetected"] / total,
+            "cross_validation_rate": float(self._stats["cross_validated"]) / total,
+            "secondary_fallback_rate": float(self._stats["secondary_fallback"]) / total,
+            "undetected_rate": float(self._stats["undetected"]) / total,
         }
 
     def reset_stats(self) -> None:
@@ -247,16 +247,16 @@ class MultiTableFusionEngine:
 
         return self.engines[table_id].fuse(primary, secondary)
 
-    def get_all_stats(self) -> dict[str, dict]:
+    def get_all_stats(self) -> dict[str, dict[str, object]]:
         """Get statistics for all tables."""
         return {
             table_id: engine.get_stats()
             for table_id, engine in self.engines.items()
         }
 
-    def get_aggregate_stats(self) -> dict:
+    def get_aggregate_stats(self) -> dict[str, object]:
         """Get aggregated statistics across all tables."""
-        aggregate = {
+        aggregate: dict[str, object] = {
             "total": 0,
             "primary_only": 0,
             "cross_validated": 0,
@@ -268,12 +268,17 @@ class MultiTableFusionEngine:
         for engine in self.engines.values():
             stats = engine.get_stats()
             for key in aggregate:
-                aggregate[key] += stats.get(key, 0)
+                if key in stats:
+                    current = aggregate[key]
+                    addition = stats[key]
+                    if isinstance(current, int) and isinstance(addition, (int, float)):
+                        aggregate[key] = current + int(addition)
 
-        total = aggregate["total"]
+        total_obj = aggregate["total"]
+        total = int(total_obj) if isinstance(total_obj, (int, float)) else 0
         if total > 0:
-            aggregate["cross_validation_rate"] = aggregate["cross_validated"] / total
-            aggregate["secondary_fallback_rate"] = aggregate["secondary_fallback"] / total
-            aggregate["undetected_rate"] = aggregate["undetected"] / total
+            aggregate["cross_validation_rate"] = float(int(aggregate.get("cross_validated", 0) or 0)) / total
+            aggregate["secondary_fallback_rate"] = float(int(aggregate.get("secondary_fallback", 0) or 0)) / total
+            aggregate["undetected_rate"] = float(int(aggregate.get("undetected", 0) or 0)) / total
 
         return aggregate

@@ -38,7 +38,7 @@ class AutomationState:
     fusion_mismatch_count: int = 0
     last_mismatch_at: datetime | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for storage."""
         return {
             "primary_connected": self.primary_connected,
@@ -63,7 +63,7 @@ class FailureEvent:
 
     reason: FailureReason
     occurred_at: datetime
-    state_snapshot: dict = field(default_factory=dict)
+    state_snapshot: dict[str, object] = field(default_factory=dict)
     message: str | None = None
 
 
@@ -106,8 +106,8 @@ class FailureDetector:
     def from_settings(
         cls,
         settings: "FallbackSettings",
-        on_fallback_triggered: Callable | None = None,
-        on_fallback_reset: Callable | None = None,
+        on_fallback_triggered: Callable[[FailureReason, AutomationState], None] | None = None,
+        on_fallback_reset: Callable[[], None] | None = None,
     ) -> "FailureDetector":
         """Create detector from settings."""
         return cls(
@@ -297,7 +297,7 @@ class FailureDetector:
         """Get recent failure history."""
         return self._failure_history[-limit:]
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, object]:
         """Get detector statistics."""
         return {
             "fallback_active": self._fallback_active,

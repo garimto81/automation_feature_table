@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import aiofiles
-from watchdog.events import FileCreatedEvent, FileSystemEventHandler
+import aiofiles  # type: ignore[import-untyped]
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
 
 from src.models.hand import HandResult
@@ -36,12 +36,13 @@ class JSONFileHandler(FileSystemEventHandler):
         self.loop = loop
         self.file_pattern = file_pattern
 
-    def on_created(self, event: FileCreatedEvent) -> None:
+    def on_created(self, event: FileSystemEvent) -> None:
         """Handle file creation events."""
         if event.is_directory:
             return
 
-        filepath = Path(event.src_path)
+        src_path: str | bytes = event.src_path
+        filepath = Path(src_path if isinstance(src_path, str) else src_path.decode())
 
         # Check if file matches pattern
         if not filepath.match(self.file_pattern):
@@ -330,7 +331,7 @@ class JSONFileWatcher:
         """Alias for stop() - compatibility with PokerGFXClient interface."""
         await self.stop()
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, object]:
         """Get watcher statistics.
 
         Returns:

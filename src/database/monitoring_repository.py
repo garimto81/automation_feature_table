@@ -1,7 +1,7 @@
 """Repository for monitoring dashboard data (PRD-0008)."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, func, select
@@ -64,7 +64,7 @@ class MonitoringRepository:
             if last_fusion_result is not None:
                 status.last_fusion_result = last_fusion_result
 
-            status.updated_at = datetime.utcnow()
+            status.updated_at = datetime.now(UTC)
             await session.flush()
 
             logger.debug(f"Updated table status for {table_id}")
@@ -229,7 +229,7 @@ class MonitoringRepository:
             if file_path is not None:
                 rec_session.file_path = file_path
 
-            rec_session.updated_at = datetime.utcnow()
+            rec_session.updated_at = datetime.now(UTC)
             await session.flush()
 
             logger.debug(f"Updated recording session {session_id}")
@@ -260,7 +260,7 @@ class MonitoringRepository:
 
     async def get_today_completed_sessions(self) -> list[RecordingSession]:
         """Get today's completed recording sessions."""
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         async with self.db_manager.session() as session:
             result = await session.execute(
                 select(RecordingSession)
@@ -318,7 +318,7 @@ class MonitoringRepository:
 
     async def get_today_stats(self) -> dict:
         """Get aggregated stats for today."""
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
         grade_dist = await self.get_grade_distribution(since=today_start)
         broadcast_count = await self.get_broadcast_eligible_count(since=today_start)

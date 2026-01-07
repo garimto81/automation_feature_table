@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for poker hand data."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import (
     BigInteger,
@@ -40,8 +40,8 @@ class Hand(Base):
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Card data (JSONB)
-    community_cards: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    players_data: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    community_cards: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
+    players_data: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Hand classification
     hand_rank: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
@@ -167,7 +167,7 @@ class ManualMark(Base):
 
     # Fallback context
     fallback_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    automation_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    automation_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # User info
     marked_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -226,7 +226,7 @@ class SystemHealthLog(Base):
 
     # Metrics
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Message
     message: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -67,11 +67,11 @@ class HandClassifier:
         card_ints = self.convert_cards(all_cards)
 
         if len(card_ints) == 5:
-            return evaluate_cards(*card_ints)
+            return int(evaluate_cards(*card_ints))
         elif len(card_ints) == 6:
-            return evaluate_cards(*card_ints)
+            return int(evaluate_cards(*card_ints))
         elif len(card_ints) == 7:
-            return evaluate_cards(*card_ints)
+            return int(evaluate_cards(*card_ints))
         else:
             raise ValueError(f"Invalid number of cards: {len(card_ints)}")
 
@@ -86,7 +86,7 @@ class HandClassifier:
         self,
         hole_cards: list[Card],
         community_cards: list[Card],
-    ) -> dict:
+    ) -> dict[str, object]:
         """
         Classify poker hand.
 
@@ -133,9 +133,9 @@ class HandClassifier:
 
     def find_best_hand(
         self,
-        players: list[dict],
+        players: list[dict[str, object]],
         community_cards: list[Card],
-    ) -> dict | None:
+    ) -> dict[str, object] | None:
         """
         Find the best hand among players.
 
@@ -150,12 +150,18 @@ class HandClassifier:
         best_rank = float("inf")
 
         for player in players:
-            if not player.get("hole_cards"):
+            hole_cards_obj = player.get("hole_cards")
+            if not hole_cards_obj:
                 continue
 
-            hole_cards = player["hole_cards"]
-            if isinstance(hole_cards[0], str):
-                hole_cards = [Card.from_string(c) for c in hole_cards]
+            if not isinstance(hole_cards_obj, list):
+                continue
+
+            hole_cards: list[Card] = []
+            if hole_cards_obj and isinstance(hole_cards_obj[0], str):
+                hole_cards = [Card.from_string(str(c)) for c in hole_cards_obj]
+            else:
+                hole_cards = list(hole_cards_obj)  # type: ignore[arg-type]
 
             try:
                 rank_value = self.evaluate(hole_cards, community_cards)

@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -192,7 +192,7 @@ class DashboardWebSocket:
                     for name, log in health_logs.items()
                 },
                 today_stats=today_stats,
-                last_updated=datetime.utcnow().isoformat(),
+                last_updated=datetime.now(UTC).isoformat(),
             )
 
         except Exception as e:
@@ -207,7 +207,7 @@ class DashboardWebSocket:
                     "primary_connected": True,
                     "secondary_connected": True,
                     "current_hand_number": 142,
-                    "hand_start_time": datetime.utcnow().isoformat(),
+                    "hand_start_time": datetime.now(UTC).isoformat(),
                     "last_fusion_result": "validated",
                 },
                 {
@@ -215,7 +215,7 @@ class DashboardWebSocket:
                     "primary_connected": True,
                     "secondary_connected": False,
                     "current_hand_number": 98,
-                    "hand_start_time": datetime.utcnow().isoformat(),
+                    "hand_start_time": datetime.now(UTC).isoformat(),
                     "last_fusion_result": "review",
                 },
             ],
@@ -225,7 +225,7 @@ class DashboardWebSocket:
                     "session_id": "session_001",
                     "table_id": "table_a",
                     "status": "recording",
-                    "start_time": datetime.utcnow().isoformat(),
+                    "start_time": datetime.now(UTC).isoformat(),
                     "file_size_mb": 256.5,
                 },
             ],
@@ -242,7 +242,7 @@ class DashboardWebSocket:
                 "completed_sessions": 3,
                 "total_storage_gb": 4.2,
             },
-            last_updated=datetime.utcnow().isoformat(),
+            last_updated=datetime.now(UTC).isoformat(),
         )
 
     async def handle_connection(self, websocket: WebSocket) -> None:
