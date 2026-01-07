@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from phevaluator import evaluate_cards
+from phevaluator import evaluate_cards  # type: ignore[import-untyped]
 
 from src.models.hand import Card, HandRank, HandResult, PlayerInfo
 
