@@ -415,6 +415,57 @@ Metabase를 활용한 실시간 포커 분석 대시보드:
 
 ---
 
+## 9. 트러블슈팅
+
+### 9.1 Docker 네트워크 문제 (Synology NAS)
+
+#### 증상
+`poker-capture` 컨테이너가 `poker-db`에 연결 실패
+
+```
+connection refused: db:5432
+could not translate host name "db" to address
+```
+
+#### 원인
+Synology NAS Docker의 bridge 네트워크 제한:
+
+| 시도 | DB_HOST 설정 | 결과 |
+|------|--------------|------|
+| 1 | `db` (서비스명) | DNS 해석 안 됨 |
+| 2 | `poker-db` (컨테이너명) | DNS 해석 안 됨 |
+| 3 | `10.10.100.122` (NAS IP) | 컨테이너→호스트 접근 불가 |
+| 4 | `host.docker.internal` | Synology 미지원 |
+
+```
+┌─────────────────────────────────────────────────┐
+│  NAS Host (10.10.100.122)                       │
+│   ┌─────────────────────────────────────────┐   │
+│   │  Docker bridge network                  │   │
+│   │  poker-db ←──❌──→ poker-capture        │   │
+│   │  (172.17.0.2)      (172.17.0.3)         │   │
+│   └─────────────────────────────────────────┘   │
+│             ↕ 격리된 벽                          │
+│   Host port: 5432 ─────────────────────────────  │
+└─────────────────────────────────────────────────┘
+```
+
+#### 해결책
+`poker-capture`에 `network_mode: host` 적용:
+
+```yaml
+poker-capture:
+  network_mode: host
+  environment:
+    - DB_HOST=127.0.0.1  # localhost로 직접 접근
+    - DB_PORT=5432
+```
+
+**장점**: NAS 호스트 네트워크 직접 사용 → 127.0.0.1:5432로 DB 접근 가능
+**단점**: 컨테이너 포트 격리 불가 (호스트 포트 직접 사용)
+
+---
+
 ## 부록
 
 ### A. 참조 자료

@@ -54,6 +54,12 @@ services:
   # =============================================================================
   # Poker Hand Capture System
   # =============================================================================
+  # NOTE: network_mode: host 사용 이유
+  # Synology NAS Docker에서 bridge 네트워크로는 db 서비스에 접근 불가
+  # - 서비스명 'db' DNS 해석 안 됨 (별도 compose 실행 시)
+  # - host.docker.internal 미지원 (Synology 제한)
+  # - 해결책: host 네트워크로 127.0.0.1:5432 직접 접근
+  # =============================================================================
   poker-capture:
     container_name: poker-capture
     build:
@@ -61,6 +67,7 @@ services:
       dockerfile: Dockerfile
     mem_limit: 256m
     cpu_shares: 512
+    network_mode: host
     depends_on:
       db:
         condition: service_healthy
@@ -72,8 +79,8 @@ services:
       - POKERGFX_PROCESSED_DB=/app/data/processed_files.json
       - POKERGFX_FILE_PATTERN=*.json
 
-      # Database Connection
-      - DB_HOST=db
+      # Database Connection (host network: use localhost)
+      - DB_HOST=127.0.0.1
       - DB_PORT=5432
       - DB_NAME=poker_hands
       - DB_USER=poker
@@ -99,8 +106,7 @@ services:
       # Application data (processed files DB, logs)
       - /volume1/docker/poker-capture/data:/app/data
     restart: unless-stopped
-    networks:
-      - poker-network
+    # NOTE: network_mode: host와 networks는 함께 사용 불가
     logging:
       driver: "json-file"
       options:
