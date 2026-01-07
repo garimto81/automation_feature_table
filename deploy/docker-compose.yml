@@ -68,9 +68,9 @@ services:
     mem_limit: 256m
     cpu_shares: 512
     network_mode: host
-    depends_on:
-      db:
-        condition: service_healthy
+    # NOTE: depends_on 제거됨
+    # network_mode: host와 bridge 네트워크의 depends_on은 호환되지 않음
+    # 애플리케이션에서 DB 연결 재시도 로직으로 대체
     environment:
       # Primary Source Mode
       - POKERGFX_MODE=json
