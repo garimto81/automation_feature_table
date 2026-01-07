@@ -6,6 +6,7 @@ import signal
 from datetime import datetime
 
 from src.config.settings import PokerGFXSettings, Settings, get_settings
+from src.dashboard.monitoring_service import MonitoringService
 from src.database.connection import DatabaseManager
 from src.database.repository import HandRepository
 from src.fallback.detector import AutomationState, FailureDetector, FailureReason
@@ -115,6 +116,9 @@ class PokerHandCaptureSystem:
         # Hand timing tracking
         self._hand_start_times: dict[str, datetime] = {}
 
+        # Monitoring service for real-time dashboard sync (PRD-0008)
+        self.monitoring_service = MonitoringService(self.db_manager)
+
     async def start(self) -> None:
         """Start the capture system."""
         logger.info("Starting Poker Hand Capture System (DB Mode)...")
@@ -123,6 +127,14 @@ class PokerHandCaptureSystem:
         # Connect to database
         await self.db_manager.connect()
         await self.db_manager.create_tables()
+
+        # Initialize monitoring service (PRD-0008)
+        await self.monitoring_service.initialize()
+        await self.monitoring_service.log_health(
+            service_name="PostgreSQL",
+            status="connected",
+            message="Database initialized",
+        )
 
         # Initialize recording manager
         self.recording_manager = RecordingManager(
@@ -134,8 +146,16 @@ class PokerHandCaptureSystem:
         # Check vMix connection
         if await self.vmix_client.ping():
             logger.info("vMix connection established")
+            await self.monitoring_service.log_health(
+                service_name="vMix",
+                status="connected",
+            )
         else:
             logger.warning("vMix not reachable - recording will be disabled")
+            await self.monitoring_service.log_health(
+                service_name="vMix",
+                status="disconnected",
+            )
 
         # Initialize video streams and Gemini processors
         for i, stream_url in enumerate(self.settings.video.streams):
@@ -151,6 +171,14 @@ class PokerHandCaptureSystem:
             )
 
         logger.info(f"Initialized {len(self.settings.video.streams)} video streams")
+
+        # Initialize table statuses in monitoring DB (PRD-0008)
+        await self.monitoring_service.sync_all_table_statuses(
+            table_ids=self.settings.table_ids,
+            primary_connected=False,  # Will be updated when first event arrives
+            secondary_connected=False,
+        )
+
         logger.info("System ready")
 
     async def stop(self) -> None:
@@ -186,11 +214,24 @@ class PokerHandCaptureSystem:
         logger.info(f"Hand started: {table_id} #{hand_number}")
 
         # Track start time
-        self._hand_start_times[table_id] = datetime.now()
+        start_time = datetime.now()
+        self._hand_start_times[table_id] = start_time
+
+        # Update monitoring (PRD-0008)
+        await self.monitoring_service.update_current_hand(
+            table_id=table_id,
+            hand_number=hand_number,
+            hand_start_time=start_time,
+        )
 
         # Start recording if vMix is available
         if self.recording_manager and self.settings.vmix.auto_record:
             await self.recording_manager.start_recording(table_id, hand_number)
+            # Track recording session in monitoring DB
+            await self.monitoring_service.start_recording_session(
+                table_id=table_id,
+                hand_number=hand_number,
+            )
 
         # Update failure detector
         self.failure_detector.update_primary_status(connected=True, event_received=True)
@@ -201,6 +242,12 @@ class PokerHandCaptureSystem:
 
         # Update failure detector
         self.failure_detector.update_primary_status(connected=True, event_received=True)
+
+        # Update monitoring - Primary connected (PRD-0008)
+        await self.monitoring_service.update_table_connection(
+            table_id=table_id,
+            primary_connected=True,
+        )
 
         # Check for matching secondary result
         secondary = self._secondary_buffer.pop(table_id, None)
@@ -226,6 +273,12 @@ class PokerHandCaptureSystem:
             connected=True,
             event_received=True,
             confidence=result.confidence,
+        )
+
+        # Update monitoring - Secondary connected (PRD-0008)
+        await self.monitoring_service.update_table_connection(
+            table_id=table_id,
+            secondary_connected=True,
         )
 
         # Handle hand events
@@ -256,9 +309,14 @@ class PokerHandCaptureSystem:
         if start_time:
             duration_seconds = int((datetime.now() - start_time).total_seconds())
 
+        # Update fusion result in monitoring (PRD-0008)
+        await self.monitoring_service.update_fusion_result(table_id, result)
+
         # Stop recording
         if self.recording_manager:
             await self.recording_manager.stop_recording(table_id)
+            # Update recording session in monitoring DB
+            await self.monitoring_service.stop_recording_session(table_id)
 
         # Grade the hand
         grade_result = self.grader.grade(
@@ -332,10 +390,22 @@ class PokerHandCaptureSystem:
 
     async def run_primary_loop(self) -> None:
         """Run Primary (PokerGFX/JSON file) processing loop."""
+        # Log initial PokerGFX connection attempt
+        await self.monitoring_service.log_health(
+            service_name="PokerGFX",
+            status="connecting",
+        )
+
         try:
             async for result in self.primary_source.listen():
                 if not self._running:
                     break
+
+                # Log PokerGFX connected on first event
+                await self.monitoring_service.log_health(
+                    service_name="PokerGFX",
+                    status="connected",
+                )
 
                 # Track hand start
                 if result.table_id not in self._hand_start_times:
@@ -345,6 +415,17 @@ class PokerHandCaptureSystem:
         except Exception as e:
             logger.error(f"Primary loop error: {e}")
             self.failure_detector.update_primary_status(connected=False)
+            # Update monitoring - Primary disconnected (PRD-0008)
+            await self.monitoring_service.log_health(
+                service_name="PokerGFX",
+                status="disconnected",
+                message=str(e),
+            )
+            for table_id in self.settings.table_ids:
+                await self.monitoring_service.update_table_connection(
+                    table_id=table_id,
+                    primary_connected=False,
+                )
 
     async def run_secondary_loop(self, table_id: str) -> None:
         """Run Secondary (AI Video) processing loop for a table."""
@@ -354,6 +435,12 @@ class PokerHandCaptureSystem:
             return
 
         try:
+            # Log Gemini API connection
+            await self.monitoring_service.log_health(
+                service_name="Gemini API",
+                status="connected",
+            )
+
             frames = self.video_capture.stream_frames(table_id)
             async for result in processor.process_stream(frames):
                 if not self._running:
@@ -362,6 +449,16 @@ class PokerHandCaptureSystem:
         except Exception as e:
             logger.error(f"Secondary loop error for {table_id}: {e}")
             self.failure_detector.update_secondary_status(connected=False)
+            # Update monitoring - Secondary disconnected (PRD-0008)
+            await self.monitoring_service.log_health(
+                service_name="Gemini API",
+                status="error",
+                message=str(e),
+            )
+            await self.monitoring_service.update_table_connection(
+                table_id=table_id,
+                secondary_connected=False,
+            )
 
     async def run_timeout_checker(self) -> None:
         """Run periodic timeout checker."""
