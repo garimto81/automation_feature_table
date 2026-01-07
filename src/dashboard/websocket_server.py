@@ -31,6 +31,7 @@ class DashboardState:
     recording_sessions: list[dict] = field(default_factory=list)
     system_health: dict[str, dict] = field(default_factory=dict)
     today_stats: dict[str, Any] = field(default_factory=dict)
+    alerts: list[dict] = field(default_factory=list)  # Recent alerts
     last_updated: str = ""
 
     def to_dict(self) -> dict:
@@ -41,6 +42,7 @@ class DashboardState:
             "recording_sessions": self.recording_sessions,
             "system_health": self.system_health,
             "today_stats": self.today_stats,
+            "alerts": self.alerts,
             "last_updated": self.last_updated,
         }
 
@@ -269,6 +271,42 @@ class DashboardWebSocket:
     def state(self) -> DashboardState:
         """Get current dashboard state."""
         return self._state
+
+    # =========================================================================
+    # Alert Methods (PRD-0008 Phase 2)
+    # =========================================================================
+
+    async def push_alert(self, alert: dict) -> None:
+        """Push an alert to all connected clients immediately.
+
+        Args:
+            alert: Alert dictionary with type, message, timestamp, etc.
+        """
+        # Add to state alerts (keep last 10)
+        self._state.alerts.insert(0, alert)
+        self._state.alerts = self._state.alerts[:10]
+
+        # Broadcast immediately if there are connections
+        if self.manager.connection_count > 0:
+            alert_message = {
+                "type": "alert",
+                "alert": alert,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            await self.manager.broadcast(alert_message)
+            logger.info(f"Alert pushed: {alert.get('type', 'unknown')}")
+
+    def add_alert(self, alert: dict) -> None:
+        """Add an alert to state (will be included in next broadcast).
+
+        Use this for non-urgent alerts that can wait for the next cycle.
+        """
+        self._state.alerts.insert(0, alert)
+        self._state.alerts = self._state.alerts[:10]
+
+    def clear_alerts(self) -> None:
+        """Clear all alerts."""
+        self._state.alerts = []
 
 
 def create_dashboard_routes(dashboard: DashboardWebSocket):
