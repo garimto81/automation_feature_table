@@ -17,7 +17,7 @@
     PostgreSQL 비밀번호
 
 .EXAMPLE
-    .\deploy-to-nas.ps1 -NasHost 192.168.1.100 -DbPassword "mypassword"
+    .\deploy-to-nas.ps1 -NasHost 10.10.100.122 -DbPassword "mypassword"
 #>
 
 param(

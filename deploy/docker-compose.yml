@@ -64,6 +64,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    links:
+      - db:db
     # Synology NAS에서 host.docker.internal 대신 extra_hosts 사용
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -75,9 +77,9 @@ services:
       - POKERGFX_PROCESSED_DB=/app/data/processed_files.json
       - POKERGFX_FILE_PATTERN=*.json
 
-      # Database Connection (같은 compose 네트워크 내 서비스명 사용)
-      - DB_HOST=db
-      - DB_PORT=5432
+      # Database Connection (Synology Docker DNS 문제로 NAS IP 직접 사용)
+      - DB_HOST=10.10.100.122
+      - DB_PORT=6432
       - DB_NAME=poker_hands
       - DB_USER=poker
       - DB_PASSWORD=${DB_PASSWORD}

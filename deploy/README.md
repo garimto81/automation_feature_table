@@ -28,10 +28,10 @@
 ```powershell
 # PowerShell에서 실행
 cd deploy
-.\deploy-to-nas.ps1 -NasHost 192.168.1.100 -DbPassword "your_password"
+.\deploy-to-nas.ps1 -NasHost 10.10.100.122 -DbPassword "your_password"
 
 # pgAdmin 포함
-.\deploy-to-nas.ps1 -NasHost 192.168.1.100 -DbPassword "your_password" -WithPgAdmin
+.\deploy-to-nas.ps1 -NasHost 10.10.100.122 -DbPassword "your_password" -WithPgAdmin
 ```
 
 ### NAS에서 직접 설치

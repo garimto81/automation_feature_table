@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
   "project_name": "automation_feature_table",
-  "last_sync": "2026-01-07T00:00:00Z",
-  "next_prd_number": 9,
+  "last_sync": "2026-01-08T00:00:00Z",
+  "next_prd_number": 10,
   "prds": {
     "PRD-0001": {
       "title": "포커 핸드 자동 캡처 및 분류 시스템",
@@ -53,6 +53,14 @@
       "local_path": "tasks/prds/PRD-0008-monitoring-dashboard.md",
       "checklist_path": "docs/checklists/PRD-0008.md",
       "created_at": "2026-01-07"
+    },
+    "PRD-0009": {
+      "title": "GFX JSON 시뮬레이터 (NAS 테스트용)",
+      "status": "In Progress",
+      "priority": "P1",
+      "local_path": "tasks/prds/PRD-0009-gfx-json-simulator.md",
+      "checklist_path": "docs/checklists/PRD-0009.md",
+      "created_at": "2026-01-08"
     }
   }
 }

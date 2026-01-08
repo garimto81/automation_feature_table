@@ -26,6 +26,8 @@ dependencies = [
     # Dashboard (PRD-0008)
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
+    # Simulator GUI (PRD-0009)
+    "streamlit>=1.30.0",
 ]
 
 [project.optional-dependencies]

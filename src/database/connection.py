@@ -4,6 +4,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
+from urllib.parse import quote_plus
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -29,8 +30,10 @@ class DatabaseManager:
     @property
     def connection_string(self) -> str:
         """Build async PostgreSQL connection string."""
+        # URL-encode password to handle special characters like @ ! etc.
+        encoded_password = quote_plus(self.settings.password)
         return (
-            f"postgresql+asyncpg://{self.settings.username}:{self.settings.password}"
+            f"postgresql+asyncpg://{self.settings.username}:{encoded_password}"
             f"@{self.settings.host}:{self.settings.port}/{self.settings.database}"
         )
 
@@ -43,6 +46,7 @@ class DatabaseManager:
             self.connection_string,
             pool_size=self.settings.pool_size,
             echo=False,
+            connect_args={"ssl": False},  # Disable SSL for Docker connections
         )
 
         self._session_factory = async_sessionmaker(
