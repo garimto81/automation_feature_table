@@ -1,8 +1,9 @@
 """Application settings using pydantic-settings."""
 
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,6 +48,31 @@ class PokerGFXSettings(BaseSettings):
         default=0.5,
         description="Delay before reading file to ensure write completion",
     )
+
+    @model_validator(mode="after")
+    def validate_json_mode_settings(self) -> "PokerGFXSettings":
+        """Validate settings when json mode is selected.
+
+        Raises:
+            ValueError: If json_watch_path is not set in json mode
+        """
+        if self.mode == "json":
+            if not self.json_watch_path:
+                raise ValueError(
+                    "POKERGFX_JSON_PATH must be set when using json mode. "
+                    "See docs/NAS_SETUP.md for configuration guide."
+                )
+            # Check if path exists (warning only, not error)
+            watch_path = Path(self.json_watch_path)
+            if not watch_path.exists():
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Watch path does not exist: {self.json_watch_path}. "
+                    f"Ensure NAS is mounted. See docs/NAS_SETUP.md for troubleshooting."
+                )
+        return self
 
 
 class GeminiSettings(BaseSettings):
@@ -130,6 +156,22 @@ class FallbackSettings(BaseSettings):
     )
 
 
+class SupabaseSettings(BaseSettings):
+    """Supabase configuration for NAS JSON sync."""
+
+    url: str = Field(default="", alias="SUPABASE_URL")
+    key: str = Field(default="", alias="SUPABASE_KEY")  # Service role key
+    anon_key: str = Field(default="", alias="SUPABASE_ANON_KEY")
+
+    # Retry settings
+    max_retries: int = Field(default=3, description="Max retry attempts")
+    retry_delay: float = Field(default=1.0, description="Initial retry delay in seconds")
+    timeout: float = Field(default=30.0, description="Request timeout in seconds")
+
+    # Batch settings
+    batch_size: int = Field(default=100, description="Batch insert size")
+
+
 class Settings(BaseSettings):
     """Main application settings."""
 
@@ -143,7 +185,8 @@ class Settings(BaseSettings):
     pokergfx: PokerGFXSettings = Field(default_factory=PokerGFXSettings)
     gemini: GeminiSettings = Field(default_factory=GeminiSettings)
     video: VideoSettings = Field(default_factory=VideoSettings)
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)  # Deprecated
+    supabase: SupabaseSettings = Field(default_factory=SupabaseSettings)
     vmix: VMixSettings = Field(default_factory=VMixSettings)
     recording: RecordingSettings = Field(default_factory=RecordingSettings)
     grading: GradingSettings = Field(default_factory=GradingSettings)

@@ -1,5 +1,7 @@
 """JSON file watcher for NAS-based PokerGFX data processing."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -7,7 +9,7 @@ import threading
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiofiles  # type: ignore[import-untyped]
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -18,6 +20,8 @@ from src.primary.pokergfx_file_parser import PokerGFXFileParser
 
 if TYPE_CHECKING:
     from src.config.settings import PokerGFXSettings
+    from src.database.supabase_client import SupabaseManager
+    from src.database.supabase_repository import GFXSessionRepository, SyncLogRepository
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,7 @@ class JSONFileHandler(FileSystemEventHandler):
 
     def __init__(
         self,
-        callback: "asyncio.Queue[str]",
+        callback: asyncio.Queue[str],
         loop: asyncio.AbstractEventLoop,
         file_pattern: str = "*.json",
     ):
@@ -69,7 +73,7 @@ class JSONFileWatcher:
             process(result)
     """
 
-    def __init__(self, settings: "PokerGFXSettings"):
+    def __init__(self, settings: PokerGFXSettings):
         """Initialize watcher.
 
         Args:
@@ -135,6 +139,70 @@ class JSONFileWatcher:
         """
         return filename in self._processed_files
 
+    async def _wait_for_file_ready(
+        self, path: Path, max_retries: int = 5
+    ) -> bool:
+        """Wait for file to finish writing by checking size stability.
+
+        This helps avoid reading files that are still being written,
+        especially on SMB/NAS where file locks may not be properly signaled.
+
+        Args:
+            path: Path to the file
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            True if file is ready (size stable), False otherwise
+        """
+        delay = self.settings.file_settle_delay
+
+        for attempt in range(max_retries):
+            try:
+                # Check if file exists
+                if not path.exists():
+                    logger.warning(f"File disappeared: {path.name}")
+                    return False
+
+                # Get initial size
+                size1 = path.stat().st_size
+
+                # Wait for settle delay
+                await asyncio.sleep(delay)
+
+                # Check size again
+                size2 = path.stat().st_size
+
+                # If size is stable and non-zero, file is ready
+                if size1 == size2 and size2 > 0:
+                    logger.debug(
+                        f"File ready after {attempt + 1} attempt(s): {path.name}"
+                    )
+                    return True
+
+                # Size still changing, increase delay for next attempt
+                logger.debug(
+                    f"File size changed ({size1} -> {size2}), "
+                    f"retrying... ({attempt + 1}/{max_retries})"
+                )
+                delay = min(delay * 1.5, 5.0)  # Cap at 5 seconds
+
+            except PermissionError as e:
+                # File is locked by another process
+                logger.debug(
+                    f"File locked (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                await asyncio.sleep(1.0)
+
+            except OSError as e:
+                # Network error or other I/O issue
+                logger.warning(
+                    f"OS error checking file (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                await asyncio.sleep(1.0)
+
+        logger.warning(f"File not ready after {max_retries} attempts: {path.name}")
+        return False
+
     async def _check_nas_connection(self) -> bool:
         """Verify NAS folder is accessible.
 
@@ -172,8 +240,10 @@ class JSONFileWatcher:
             logger.debug(f"Skipping already processed file: {filename}")
             return []
 
-        # Wait for file to finish writing (NAS write delay)
-        await asyncio.sleep(self.settings.file_settle_delay)
+        # Wait for file to finish writing (NAS write delay with retry)
+        if not await self._wait_for_file_ready(path):
+            logger.warning(f"Skipping file not ready for reading: {filename}")
+            return []
 
         try:
             # Read file asynchronously
@@ -342,4 +412,347 @@ class JSONFileWatcher:
             "watch_path": self.settings.json_watch_path,
             "polling_interval": self.settings.polling_interval,
             "is_running": self._running,
+        }
+
+
+class SupabaseJSONFileWatcher:
+    """Watches NAS folder and syncs PokerGFX JSON files to Supabase.
+
+    Key differences from JSONFileWatcher:
+    - Duplicate detection via Supabase (file_hash) instead of local JSON
+    - Raw JSON stored in Supabase JSONB for flexibility
+    - Sync logging for audit trail
+
+    Usage:
+        watcher = SupabaseJSONFileWatcher(settings, supabase, session_repo, sync_log_repo)
+        async for result in watcher.listen():
+            process(result)
+    """
+
+    def __init__(
+        self,
+        settings: PokerGFXSettings,
+        supabase: SupabaseManager,
+        session_repo: GFXSessionRepository,
+        sync_log_repo: SyncLogRepository,
+    ) -> None:
+        """Initialize Supabase file watcher.
+
+        Args:
+            settings: PokerGFX settings with json_watch_path
+            supabase: Supabase manager instance
+            session_repo: GFX session repository
+            sync_log_repo: Sync log repository
+        """
+        self.settings = settings
+        self.supabase = supabase
+        self.session_repo = session_repo
+        self.sync_log_repo = sync_log_repo
+        self.parser = PokerGFXFileParser()
+        self._running = False
+        self._observer: PollingObserver | None = None
+
+    async def _compute_file_hash(self, filepath: Path) -> str:
+        """Compute SHA256 hash of file content.
+
+        Args:
+            filepath: Path to the file
+
+        Returns:
+            Hexadecimal SHA256 hash string
+        """
+        import hashlib
+
+        async with aiofiles.open(filepath, "rb") as f:
+            content = await f.read()
+        return hashlib.sha256(content).hexdigest()
+
+    async def _wait_for_file_ready(
+        self, path: Path, max_retries: int = 5
+    ) -> bool:
+        """Wait for file to finish writing by checking size stability.
+
+        This helps avoid reading files that are still being written,
+        especially on SMB/NAS where file locks may not be properly signaled.
+
+        Args:
+            path: Path to the file
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            True if file is ready (size stable), False otherwise
+        """
+        delay = self.settings.file_settle_delay
+
+        for attempt in range(max_retries):
+            try:
+                if not path.exists():
+                    logger.warning(f"File disappeared: {path.name}")
+                    return False
+
+                size1 = path.stat().st_size
+                await asyncio.sleep(delay)
+                size2 = path.stat().st_size
+
+                if size1 == size2 and size2 > 0:
+                    logger.debug(
+                        f"File ready after {attempt + 1} attempt(s): {path.name}"
+                    )
+                    return True
+
+                logger.debug(
+                    f"File size changed ({size1} -> {size2}), "
+                    f"retrying... ({attempt + 1}/{max_retries})"
+                )
+                delay = min(delay * 1.5, 5.0)
+
+            except PermissionError as e:
+                logger.debug(
+                    f"File locked (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                await asyncio.sleep(1.0)
+
+            except OSError as e:
+                logger.warning(
+                    f"OS error checking file (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+                await asyncio.sleep(1.0)
+
+        logger.warning(f"File not ready after {max_retries} attempts: {path.name}")
+        return False
+
+    async def _check_nas_connection(self) -> bool:
+        """Verify NAS folder is accessible.
+
+        Returns:
+            True if accessible
+        """
+        watch_path = Path(self.settings.json_watch_path)
+
+        if not watch_path.exists():
+            logger.error(f"Watch path does not exist: {watch_path}")
+            return False
+
+        try:
+            list(watch_path.iterdir())
+            return True
+        except (OSError, PermissionError) as e:
+            logger.error(f"Cannot access watch path: {e}")
+            return False
+
+    async def _process_file(self, filepath: str) -> list[HandResult]:
+        """Process a single JSON file and sync to Supabase.
+
+        Args:
+            filepath: Path to the JSON file
+
+        Returns:
+            List of HandResult objects from the file
+        """
+        path = Path(filepath)
+        filename = path.name
+
+        # Wait for file to finish writing (NAS write delay with retry)
+        if not await self._wait_for_file_ready(path):
+            logger.warning(f"Skipping file not ready for reading: {filename}")
+            return []
+
+        sync_log: dict[str, Any] | None = None
+
+        try:
+            # Compute hash for duplicate detection
+            file_hash = await self._compute_file_hash(path)
+
+            # Check if already processed (via Supabase)
+            if await self.sync_log_repo.is_file_processed(file_hash):
+                logger.debug(f"Skipping already processed file: {filename}")
+                return []
+
+            # Log sync start
+            file_size = path.stat().st_size
+            sync_log = await self.sync_log_repo.log_sync_start(
+                file_name=filename,
+                file_path=str(path),
+                file_hash=file_hash,
+                file_size_bytes=file_size,
+                operation="created",
+            )
+
+            # Read and parse file
+            async with aiofiles.open(filepath, encoding="utf-8") as f:
+                content = await f.read()
+
+            data = json.loads(content)
+
+            # Save raw JSON to Supabase
+            session_id = data.get("ID", 0)
+            session_record = await self.session_repo.save_session(
+                session_id=session_id,
+                file_name=filename,
+                file_hash=file_hash,
+                raw_json=data,
+                nas_path=str(path),
+            )
+
+            if session_record is None:
+                # Duplicate detected
+                await self.sync_log_repo.log_sync_complete(
+                    log_id=sync_log["id"],
+                    status="skipped",
+                    error_message="Duplicate session",
+                )
+                return []
+
+            # Parse HandResults for downstream processing
+            results = self.parser.parse_session_data(data)
+
+            # Log success
+            await self.sync_log_repo.log_sync_complete(
+                log_id=sync_log["id"],
+                session_id=session_record["id"],
+                status="success",
+            )
+
+            logger.info(
+                f"Synced {filename} to Supabase: {len(results)} hand results, "
+                f"session_id={session_id}, hands={len(data.get('Hands', []))}"
+            )
+
+            return results
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in {filename}: {e}")
+            if sync_log:
+                await self.sync_log_repo.log_sync_complete(
+                    log_id=sync_log["id"],
+                    status="failed",
+                    error_message=f"JSON decode error: {e}",
+                )
+            return []
+
+        except Exception as e:
+            logger.exception(f"Error processing {filename}: {e}")
+            if sync_log:
+                await self.sync_log_repo.log_sync_complete(
+                    log_id=sync_log["id"],
+                    status="failed",
+                    error_message=str(e),
+                )
+            return []
+
+    async def _process_existing_files(self) -> AsyncIterator[HandResult]:
+        """Process any existing unprocessed files in the watch folder.
+
+        Yields:
+            HandResult objects from existing files
+        """
+        watch_path = Path(self.settings.json_watch_path)
+
+        for filepath in watch_path.glob(self.settings.file_pattern):
+            if not self._running:
+                break
+
+            results = await self._process_file(str(filepath))
+            for result in results:
+                yield result
+
+    async def listen(self) -> AsyncIterator[HandResult]:
+        """Listen for new JSON files and yield HandResults.
+
+        Compatible with JSONFileWatcher.listen() interface.
+
+        Yields:
+            HandResult objects as files are detected and processed
+        """
+        # Verify NAS connection
+        if not await self._check_nas_connection():
+            raise RuntimeError(
+                f"Cannot access watch path: {self.settings.json_watch_path}"
+            )
+
+        # Verify Supabase connection
+        if not await self.supabase.health_check():
+            raise RuntimeError("Supabase connection failed")
+
+        self._running = True
+        logger.info(
+            f"Starting Supabase file watcher on: {self.settings.json_watch_path}"
+        )
+
+        # Create async queue for file events
+        file_queue: asyncio.Queue[str] = asyncio.Queue()
+        loop = asyncio.get_event_loop()
+
+        # Setup watchdog with polling observer (required for SMB)
+        handler = JSONFileHandler(
+            callback=file_queue,
+            loop=loop,
+            file_pattern=self.settings.file_pattern,
+        )
+
+        self._observer = PollingObserver(timeout=self.settings.polling_interval)
+        self._observer.schedule(
+            handler,
+            self.settings.json_watch_path,
+            recursive=False,
+        )
+        self._observer.start()
+
+        logger.info(
+            f"Supabase file watcher started "
+            f"(polling interval: {self.settings.polling_interval}s)"
+        )
+
+        try:
+            # First, process any existing unprocessed files
+            async for result in self._process_existing_files():
+                if not self._running:
+                    break
+                yield result
+
+            # Then watch for new files
+            while self._running:
+                try:
+                    filepath = await asyncio.wait_for(
+                        file_queue.get(),
+                        timeout=1.0,
+                    )
+
+                    results = await self._process_file(filepath)
+                    for result in results:
+                        yield result
+
+                except TimeoutError:
+                    # Periodically check connections
+                    continue
+
+        finally:
+            await self.stop()
+
+    async def stop(self) -> None:
+        """Stop the file watcher."""
+        self._running = False
+
+        if self._observer:
+            self._observer.stop()
+            self._observer.join(timeout=5.0)
+            self._observer = None
+
+        logger.info("Supabase file watcher stopped")
+
+    async def disconnect(self) -> None:
+        """Alias for stop() - compatibility interface."""
+        await self.stop()
+
+    def get_stats(self) -> dict[str, object]:
+        """Get watcher statistics.
+
+        Returns:
+            Dictionary with statistics
+        """
+        return {
+            "watch_path": self.settings.json_watch_path,
+            "polling_interval": self.settings.polling_interval,
+            "is_running": self._running,
+            "backend": "supabase",
         }

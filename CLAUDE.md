@@ -47,6 +47,9 @@ mypy src/
 
 # 시스템 실행
 python -m src.main
+
+# Simulator GUI 실행 (Streamlit)
+streamlit run src/simulator/gui/app.py
 ```
 
 **참고**:
@@ -73,12 +76,16 @@ Database    Grading    Recording
 | 모듈 | 역할 |
 |------|------|
 | `src/primary/pokergfx_client.py` | PokerGFX WebSocket 연결, RFID 카드 데이터 수신 |
+| `src/primary/json_file_watcher.py` | NAS JSON 파일 감시 (watchdog 기반) |
 | `src/primary/hand_classifier.py` | phevaluator 기반 핸드 등급 분류 |
 | `src/secondary/gemini_live.py` | Gemini Live API로 비디오 스트림 분석 |
 | `src/secondary/video_capture.py` | RTSP 스트림 캡처 (OpenCV) |
 | `src/fusion/engine.py` | Primary/Secondary 결과 융합 및 cross-validation |
 | `src/grading/grader.py` | 핸드 A/B/C 등급 분류 |
-| `src/database/` | PostgreSQL ORM 모델, 연결, 저장소 |
+| `src/database/supabase_*.py` | Supabase 클라이언트 및 저장소 (Primary DB) |
+| `src/database/` | PostgreSQL ORM 모델 (Legacy, deprecated) |
+| `src/dashboard/` | 실시간 모니터링 WebSocket 서버 및 알림 |
+| `src/simulator/` | GFX JSON 시뮬레이터 및 Streamlit GUI |
 | `src/recording/` | vMix 녹화 세션 관리 |
 | `src/vmix/client.py` | vMix HTTP API 클라이언트 |
 | `src/fallback/` | 장애 감지 및 수동 마킹 폴백 |
@@ -123,7 +130,8 @@ Database    Grading    Recording
 | `POKERGFX_API_URL` | PokerGFX WebSocket URL |
 | `GEMINI_API_KEY` | Gemini API 키 |
 | `VIDEO_STREAMS` | RTSP 스트림 URL (쉼표 구분) |
-| `DB_HOST`, `DB_NAME` | PostgreSQL 데이터베이스 |
+| `SUPABASE_URL`, `SUPABASE_KEY` | Supabase 연결 (Primary DB) |
+| `DB_HOST`, `DB_NAME` | PostgreSQL 데이터베이스 (Legacy) |
 | `VMIX_HOST`, `VMIX_PORT` | vMix HTTP API 연결 |
 | `VMIX_AUTO_RECORD` | 자동 녹화 활성화 |
 
@@ -174,10 +182,13 @@ Python 3.11+ 필수 (phevaluator, pydantic-settings 호환성)
 | `PRD-0004-fusion-engine.md` | Fusion Engine |
 | `PRD-0005-integrated-db-subtitle-system.md` | DB/자막 시스템 |
 | `PRD-0007-custom-rfid-client.md` | 커스텀 RFID 클라이언트 |
+| `PRD-0008-monitoring-dashboard.md` | 실시간 모니터링 대시보드 |
+| `PRD-0009-gfx-json-simulator.md` | GFX JSON 시뮬레이터 |
+| `PRD-0010-nas-smb-integration.md` | NAS SMB 연동 |
 
 ### Checklist (docs/checklists/)
 
-PRD별 진행 체크리스트: `PRD-0001.md` ~ `PRD-0007.md`
+PRD별 진행 체크리스트: `PRD-0001.md` ~ `PRD-0010.md`
 
 ## 데이터 흐름
 
@@ -196,6 +207,9 @@ Gemini Live API → AIVideoResult → ┘
 | `FusionEngine` | `src/fusion/engine.py` | Primary/Secondary 결과 융합 |
 | `HandGrader` | `src/grading/grader.py` | A/B/C 등급 분류 |
 | `FailureDetector` | `src/fallback/detector.py` | 장애 감지 및 fallback 트리거 |
+| `GFXJsonSimulator` | `src/simulator/gfx_json_simulator.py` | NAS JSON 시뮬레이션 |
+| `MonitoringService` | `src/dashboard/monitoring_service.py` | 실시간 상태 동기화 |
+| `SupabaseManager` | `src/database/supabase_client.py` | Supabase 연결 관리 |
 
 ## 설정 구조
 
@@ -207,10 +221,26 @@ Settings
 ├── gemini: GeminiSettings
 ├── video: VideoSettings
 ├── database: DatabaseSettings
+├── supabase: SupabaseSettings
 ├── vmix: VMixSettings
 ├── recording: RecordingSettings
 ├── grading: GradingSettings
-└── fallback: FallbackSettings
+├── fallback: FallbackSettings
+└── simulator: SimulatorSettings  # src/simulator/config.py
 ```
 
 설정 로드: `get_settings()` (LRU 캐시 적용)
+
+## 데이터베이스 전환
+
+**Supabase를 Primary DB로 사용** (PostgreSQL은 Legacy로 유지)
+
+| 구분 | 용도 | 상태 |
+|------|------|------|
+| Supabase | 실시간 대시보드, GFX 세션 저장 | **Active** |
+| PostgreSQL | 기존 핸드/플레이어 데이터 | Legacy |
+
+Supabase 테이블:
+- `gfx_sessions`: PokerGFX JSON 세션 원본 저장
+- `table_status`: 테이블 연결 상태 모니터링
+- `hand_grades`: 핸드 등급 이력
