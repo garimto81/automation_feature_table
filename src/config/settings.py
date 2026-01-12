@@ -49,6 +49,28 @@ class PokerGFXSettings(BaseSettings):
         description="Delay before reading file to ensure write completion",
     )
 
+    # SMB Fallback settings (PRD-0010)
+    fallback_enabled: bool = Field(
+        default=True,
+        alias="POKERGFX_FALLBACK_ENABLED",
+        description="Enable local folder fallback when SMB fails",
+    )
+    fallback_path: str = Field(
+        default="./data/manual_import",
+        alias="POKERGFX_FALLBACK_PATH",
+        description="Local fallback folder for manual file copy",
+    )
+    health_check_interval: float = Field(
+        default=30.0,
+        alias="POKERGFX_HEALTH_CHECK_INTERVAL",
+        description="SMB health check interval in seconds",
+    )
+    max_reconnect_attempts: int = Field(
+        default=5,
+        alias="POKERGFX_MAX_RECONNECT",
+        description="Maximum SMB reconnection attempts before fallback",
+    )
+
     @model_validator(mode="after")
     def validate_json_mode_settings(self) -> "PokerGFXSettings":
         """Validate settings when json mode is selected.

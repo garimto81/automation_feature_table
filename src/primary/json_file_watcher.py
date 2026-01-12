@@ -21,27 +21,74 @@ from src.primary.pokergfx_file_parser import PokerGFXFileParser
 if TYPE_CHECKING:
     from src.config.settings import PokerGFXSettings
     from src.database.supabase_client import SupabaseManager
-    from src.database.supabase_repository import GFXSessionRepository, SyncLogRepository
+    from src.database.supabase_repository import (
+        GFXHandsRepository,
+        GFXSessionRepository,
+        SyncLogRepository,
+    )
 
 logger = logging.getLogger(__name__)
 
 
+class FileEvent:
+    """Represents a file system event with type information."""
+
+    __slots__ = ("filepath", "event_type", "timestamp")
+
+    def __init__(self, filepath: str, event_type: str) -> None:
+        self.filepath = filepath
+        self.event_type = event_type  # "created" | "modified"
+        self.timestamp = datetime.now()
+
+
 class JSONFileHandler(FileSystemEventHandler):
-    """Handles file system events for JSON files."""
+    """Handles file system events for JSON files with debounce support."""
 
     def __init__(
         self,
-        callback: asyncio.Queue[str],
+        callback: asyncio.Queue[FileEvent],
         loop: asyncio.AbstractEventLoop,
         file_pattern: str = "*.json",
+        debounce_seconds: float = 1.0,
     ):
         super().__init__()
         self.callback_queue = callback
         self.loop = loop
         self.file_pattern = file_pattern
+        self.debounce_seconds = debounce_seconds
+        # Track pending events for debounce: filepath -> (event_type, timer_handle)
+        self._pending_events: dict[str, tuple[str, asyncio.TimerHandle | None]] = {}
+        self._lock = threading.Lock()
 
-    def on_created(self, event: FileSystemEvent) -> None:
-        """Handle file creation events."""
+    def _schedule_event(self, filepath: str, event_type: str) -> None:
+        """Schedule an event with debounce.
+
+        If multiple events occur for the same file within debounce_seconds,
+        only the last event is processed.
+        """
+        with self._lock:
+            # Cancel existing timer if any
+            if filepath in self._pending_events:
+                _, old_handle = self._pending_events[filepath]
+                if old_handle is not None:
+                    old_handle.cancel()
+
+            # Schedule new event after debounce delay
+            def emit_event() -> None:
+                with self._lock:
+                    if filepath in self._pending_events:
+                        stored_type, _ = self._pending_events.pop(filepath)
+                        event = FileEvent(filepath, stored_type)
+                        self.callback_queue.put_nowait(event)
+                        logger.debug(
+                            f"Emitted {stored_type} event for: {Path(filepath).name}"
+                        )
+
+            handle = self.loop.call_later(self.debounce_seconds, emit_event)
+            self._pending_events[filepath] = (event_type, handle)
+
+    def _handle_event(self, event: FileSystemEvent, event_type: str) -> None:
+        """Common handler for file events."""
         if event.is_directory:
             return
 
@@ -52,13 +99,22 @@ class JSONFileHandler(FileSystemEventHandler):
         if not filepath.match(self.file_pattern):
             return
 
-        logger.debug(f"Detected new file: {filepath}")
+        logger.debug(f"Detected {event_type} file: {filepath}")
 
-        # Put filepath into async queue (thread-safe)
+        # Schedule with debounce (thread-safe via loop.call_soon_threadsafe)
         self.loop.call_soon_threadsafe(
-            self.callback_queue.put_nowait,
+            self._schedule_event,
             str(filepath),
+            event_type,
         )
+
+    def on_created(self, event: FileSystemEvent) -> None:
+        """Handle file creation events."""
+        self._handle_event(event, "created")
+
+    def on_modified(self, event: FileSystemEvent) -> None:
+        """Handle file modification events."""
+        self._handle_event(event, "modified")
 
 
 class JSONFileWatcher:
@@ -204,24 +260,48 @@ class JSONFileWatcher:
         return False
 
     async def _check_nas_connection(self) -> bool:
-        """Verify NAS folder is accessible.
+        """Verify NAS folder is accessible with 3-stage verification.
+
+        Stage 1: Path existence check
+        Stage 2: Directory read test
+        Stage 3: Write test (optional, read-only mount OK)
 
         Returns:
-            True if accessible
+            True if accessible (read at minimum)
         """
         watch_path = Path(self.settings.json_watch_path)
 
-        if not watch_path.exists():
-            logger.error(f"Watch path does not exist: {watch_path}")
+        # Stage 1: Path existence
+        try:
+            if not watch_path.exists():
+                logger.error(f"Watch path does not exist: {watch_path}")
+                return False
+        except OSError as e:
+            logger.error(f"Path access error (Stage 1): {e}")
             return False
 
+        # Stage 2: Directory read test
         try:
-            # Try to list directory contents
-            list(watch_path.iterdir())
-            return True
-        except (OSError, PermissionError) as e:
-            logger.error(f"Cannot access watch path: {e}")
+            files = list(watch_path.iterdir())
+            logger.debug(f"NAS connection verified: {len(files)} items found")
+        except PermissionError as e:
+            logger.error(f"Read permission denied (Stage 2): {e}")
             return False
+        except OSError as e:
+            logger.error(f"Directory read error (Stage 2): {e}")
+            return False
+
+        # Stage 3: Write test (optional - read-only mount is acceptable)
+        test_file = watch_path / ".nas_health_check"
+        try:
+            test_file.touch()
+            test_file.unlink()
+            logger.debug("NAS write test passed")
+        except (PermissionError, OSError):
+            # Read-only mount is OK for watching
+            logger.debug("NAS write test failed (read-only OK)")
+
+        return True
 
     async def _process_file(self, filepath: str) -> list[HandResult]:
         """Process a single JSON file.
@@ -333,7 +413,7 @@ class JSONFileWatcher:
         logger.info(f"Starting file watcher on: {self.settings.json_watch_path}")
 
         # Create async queue for file events
-        file_queue: asyncio.Queue[str] = asyncio.Queue()
+        file_queue: asyncio.Queue[FileEvent] = asyncio.Queue()
         loop = asyncio.get_event_loop()
 
         # Setup watchdog with polling observer (required for SMB)
@@ -341,6 +421,7 @@ class JSONFileWatcher:
             callback=file_queue,
             loop=loop,
             file_pattern=self.settings.file_pattern,
+            debounce_seconds=1.0,
         )
 
         self._observer = PollingObserver(timeout=self.settings.polling_interval)
@@ -362,25 +443,55 @@ class JSONFileWatcher:
                     break
                 yield result
 
-            # Then watch for new files
+            # Then watch for new files with auto-reconnect
+            reconnect_delay = 5.0
+            max_reconnect_delay = 60.0
+            consecutive_failures = 0
+            max_failures = self.settings.max_reconnect_attempts
+
             while self._running:
                 try:
-                    # Wait for new file with timeout
-                    filepath = await asyncio.wait_for(
+                    # Wait for new file event with timeout
+                    file_event = await asyncio.wait_for(
                         file_queue.get(),
                         timeout=1.0,
                     )
 
-                    # Process the file
-                    results = await self._process_file(filepath)
+                    # Reset failure count on successful file receipt
+                    consecutive_failures = 0
+                    reconnect_delay = 5.0
+
+                    # Process the file (JSONFileWatcher ignores event_type)
+                    results = await self._process_file(file_event.filepath)
                     for result in results:
                         yield result
 
                 except TimeoutError:
-                    # Check if NAS is still accessible periodically
+                    # Periodic health check
                     if not await self._check_nas_connection():
-                        logger.warning("NAS connection lost, attempting to reconnect...")
-                        await asyncio.sleep(5.0)
+                        consecutive_failures += 1
+                        logger.warning(
+                            f"NAS connection lost ({consecutive_failures}/{max_failures}), "
+                            f"retrying in {reconnect_delay}s..."
+                        )
+
+                        if consecutive_failures >= max_failures:
+                            logger.error(
+                                f"NAS connection failed {max_failures} times. "
+                                f"Consider switching to fallback mode."
+                            )
+                            # Don't stop - keep trying but with max delay
+                            consecutive_failures = max_failures
+
+                        await asyncio.sleep(reconnect_delay)
+                        # Exponential backoff
+                        reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+                    else:
+                        # Reset on successful check
+                        if consecutive_failures > 0:
+                            logger.info("NAS connection restored")
+                            consecutive_failures = 0
+                            reconnect_delay = 5.0
                     continue
 
         finally:
@@ -422,9 +533,10 @@ class SupabaseJSONFileWatcher:
     - Duplicate detection via Supabase (file_hash) instead of local JSON
     - Raw JSON stored in Supabase JSONB for flexibility
     - Sync logging for audit trail
+    - Incremental sync: on file modification, only new hands are added
 
     Usage:
-        watcher = SupabaseJSONFileWatcher(settings, supabase, session_repo, sync_log_repo)
+        watcher = SupabaseJSONFileWatcher(settings, supabase, session_repo, sync_log_repo, hands_repo)
         async for result in watcher.listen():
             process(result)
     """
@@ -435,6 +547,7 @@ class SupabaseJSONFileWatcher:
         supabase: SupabaseManager,
         session_repo: GFXSessionRepository,
         sync_log_repo: SyncLogRepository,
+        hands_repo: GFXHandsRepository | None = None,
     ) -> None:
         """Initialize Supabase file watcher.
 
@@ -443,11 +556,13 @@ class SupabaseJSONFileWatcher:
             supabase: Supabase manager instance
             session_repo: GFX session repository
             sync_log_repo: Sync log repository
+            hands_repo: GFX hands repository (optional, for incremental sync)
         """
         self.settings = settings
         self.supabase = supabase
         self.session_repo = session_repo
         self.sync_log_repo = sync_log_repo
+        self.hands_repo = hands_repo
         self.parser = PokerGFXFileParser()
         self._running = False
         self._observer: PollingObserver | None = None
@@ -540,14 +655,20 @@ class SupabaseJSONFileWatcher:
             logger.error(f"Cannot access watch path: {e}")
             return False
 
-    async def _process_file(self, filepath: str) -> list[HandResult]:
+    async def _process_file(
+        self, filepath: str, event_type: str = "created"
+    ) -> list[HandResult]:
         """Process a single JSON file and sync to Supabase.
+
+        For 'created' events: saves full session and all hands.
+        For 'modified' events: saves only new hands (incremental sync).
 
         Args:
             filepath: Path to the JSON file
+            event_type: Type of file event ("created" or "modified")
 
         Returns:
-            List of HandResult objects from the file
+            List of HandResult objects from the file (new hands only for modified)
         """
         path = Path(filepath)
         filename = path.name
@@ -562,6 +683,22 @@ class SupabaseJSONFileWatcher:
         try:
             # Compute hash for duplicate detection
             file_hash = await self._compute_file_hash(path)
+
+            # Read and parse file first (needed for both created and modified)
+            async with aiofiles.open(filepath, encoding="utf-8") as f:
+                content = await f.read()
+
+            data = json.loads(content)
+            session_id = data.get("ID", 0)
+            all_hands = data.get("Hands", [])
+
+            # Handle based on event type
+            if event_type == "modified":
+                return await self._handle_modified_file(
+                    path, filename, file_hash, data, session_id, all_hands
+                )
+
+            # === CREATED event: Full sync ===
 
             # Check if already processed (via Supabase)
             if await self.sync_log_repo.is_file_processed(file_hash):
@@ -578,14 +715,7 @@ class SupabaseJSONFileWatcher:
                 operation="created",
             )
 
-            # Read and parse file
-            async with aiofiles.open(filepath, encoding="utf-8") as f:
-                content = await f.read()
-
-            data = json.loads(content)
-
             # Save raw JSON to Supabase
-            session_id = data.get("ID", 0)
             session_record = await self.session_repo.save_session(
                 session_id=session_id,
                 file_name=filename,
@@ -603,6 +733,10 @@ class SupabaseJSONFileWatcher:
                 )
                 return []
 
+            # Save individual hands if hands_repo is available
+            if self.hands_repo and all_hands:
+                await self.hands_repo.save_hands(session_id, all_hands)
+
             # Parse HandResults for downstream processing
             results = self.parser.parse_session_data(data)
 
@@ -615,7 +749,7 @@ class SupabaseJSONFileWatcher:
 
             logger.info(
                 f"Synced {filename} to Supabase: {len(results)} hand results, "
-                f"session_id={session_id}, hands={len(data.get('Hands', []))}"
+                f"session_id={session_id}, hands={len(all_hands)}"
             )
 
             return results
@@ -632,6 +766,117 @@ class SupabaseJSONFileWatcher:
 
         except Exception as e:
             logger.exception(f"Error processing {filename}: {e}")
+            if sync_log:
+                await self.sync_log_repo.log_sync_complete(
+                    log_id=sync_log["id"],
+                    status="failed",
+                    error_message=str(e),
+                )
+            return []
+
+    async def _handle_modified_file(
+        self,
+        path: Path,
+        filename: str,
+        file_hash: str,
+        data: dict[str, Any],
+        session_id: int,
+        all_hands: list[dict[str, Any]],
+    ) -> list[HandResult]:
+        """Handle file modification: save only new hands.
+
+        Args:
+            path: Path to the file
+            filename: File name
+            file_hash: New file hash
+            data: Parsed JSON data
+            session_id: PokerGFX session ID
+            all_hands: All hands from the file
+
+        Returns:
+            List of HandResult objects for new hands only
+        """
+        sync_log: dict[str, Any] | None = None
+
+        try:
+            # Check if session exists
+            existing_session = await self.session_repo.get_by_session_id(session_id)
+
+            if not existing_session:
+                # Session doesn't exist yet, treat as created
+                logger.info(
+                    f"Modified file {filename} has no existing session, "
+                    f"treating as new file"
+                )
+                # Recursively call with "created" event type
+                return await self._process_file(str(path), "created")
+
+            # Log sync start for modification
+            file_size = path.stat().st_size
+            sync_log = await self.sync_log_repo.log_sync_start(
+                file_name=filename,
+                file_path=str(path),
+                file_hash=file_hash,
+                file_size_bytes=file_size,
+                operation="modified",
+            )
+
+            # Find new hands only
+            new_hands: list[dict[str, Any]] = []
+            if self.hands_repo:
+                new_hands = await self.hands_repo.get_new_hands(session_id, all_hands)
+            else:
+                # Without hands_repo, we can't do incremental sync
+                logger.warning(
+                    f"hands_repo not available, skipping incremental sync for {filename}"
+                )
+                await self.sync_log_repo.log_sync_complete(
+                    log_id=sync_log["id"],
+                    status="skipped",
+                    error_message="hands_repo not configured for incremental sync",
+                )
+                return []
+
+            if not new_hands:
+                logger.debug(f"No new hands in modified file: {filename}")
+                await self.sync_log_repo.log_sync_complete(
+                    log_id=sync_log["id"],
+                    status="skipped",
+                    error_message="No new hands found",
+                )
+                return []
+
+            # Save new hands
+            await self.hands_repo.save_hands(session_id, new_hands)
+
+            # Update session with new data
+            await self.session_repo.update_session(
+                session_id=session_id,
+                raw_json=data,
+                file_hash=file_hash,
+            )
+
+            # Parse HandResults for new hands only
+            # Create a temporary data dict with only new hands for parsing
+            temp_data = {**data, "Hands": new_hands}
+            results = self.parser.parse_session_data(temp_data)
+
+            # Log success
+            await self.sync_log_repo.log_sync_complete(
+                log_id=sync_log["id"],
+                session_id=existing_session["id"],
+                status="success",
+            )
+
+            logger.info(
+                f"Incremental sync {filename}: {len(new_hands)} new hands added, "
+                f"session_id={session_id}, total_hands={len(all_hands)}"
+            )
+
+            return results
+
+        except Exception as e:
+            logger.exception(f"Error handling modified file {filename}: {e}")
             if sync_log:
                 await self.sync_log_repo.log_sync_complete(
                     log_id=sync_log["id"],
@@ -680,7 +925,7 @@ class SupabaseJSONFileWatcher:
         )
 
         # Create async queue for file events
-        file_queue: asyncio.Queue[str] = asyncio.Queue()
+        file_queue: asyncio.Queue[FileEvent] = asyncio.Queue()
         loop = asyncio.get_event_loop()
 
         # Setup watchdog with polling observer (required for SMB)
@@ -688,6 +933,7 @@ class SupabaseJSONFileWatcher:
             callback=file_queue,
             loop=loop,
             file_pattern=self.settings.file_pattern,
+            debounce_seconds=1.0,
         )
 
         self._observer = PollingObserver(timeout=self.settings.polling_interval)
@@ -710,15 +956,17 @@ class SupabaseJSONFileWatcher:
                     break
                 yield result
 
-            # Then watch for new files
+            # Then watch for new/modified files
             while self._running:
                 try:
-                    filepath = await asyncio.wait_for(
+                    file_event = await asyncio.wait_for(
                         file_queue.get(),
                         timeout=1.0,
                     )
 
-                    results = await self._process_file(filepath)
+                    results = await self._process_file(
+                        file_event.filepath, file_event.event_type
+                    )
                     for result in results:
                         yield result
 

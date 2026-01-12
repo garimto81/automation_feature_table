@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.models.hand import HandRank
-from src.primary.json_file_watcher import JSONFileWatcher
+from src.primary.json_file_watcher import FileEvent, JSONFileHandler, JSONFileWatcher
 from src.primary.pokergfx_file_parser import PokerGFXFileParser
 
 
@@ -490,3 +490,175 @@ class TestIntegration:
         assert len(results) == 3
         hand_numbers = {r.hand_number for r in results}
         assert hand_numbers == {1, 2, 3}
+
+
+class TestFileEvent:
+    """Tests for FileEvent class."""
+
+    def test_file_event_creation(self):
+        """Test FileEvent initialization."""
+        event = FileEvent("/path/to/file.json", "created")
+        assert event.filepath == "/path/to/file.json"
+        assert event.event_type == "created"
+        assert event.timestamp is not None
+
+    def test_file_event_modified(self):
+        """Test FileEvent with modified type."""
+        event = FileEvent("/path/to/file.json", "modified")
+        assert event.event_type == "modified"
+
+
+class TestJSONFileHandlerModified:
+    """Tests for JSONFileHandler with on_modified support."""
+
+    @pytest.fixture
+    def event_loop_and_queue(self):
+        """Create event loop and queue for testing."""
+        loop = asyncio.new_event_loop()
+        queue: asyncio.Queue[FileEvent] = asyncio.Queue()
+        yield loop, queue
+        loop.close()
+
+    def test_handler_initialization_with_debounce(self, event_loop_and_queue):
+        """Test handler initialization with debounce parameter."""
+        loop, queue = event_loop_and_queue
+        handler = JSONFileHandler(
+            callback=queue,
+            loop=loop,
+            file_pattern="*.json",
+            debounce_seconds=2.0,
+        )
+        assert handler.debounce_seconds == 2.0
+        assert handler.file_pattern == "*.json"
+
+    def test_on_modified_event(self, event_loop_and_queue, tmp_path):
+        """Test on_modified event handling."""
+        loop, queue = event_loop_and_queue
+
+        handler = JSONFileHandler(
+            callback=queue,
+            loop=loop,
+            file_pattern="*.json",
+            debounce_seconds=0.1,  # Short debounce for testing
+        )
+
+        # Create a mock event
+        mock_event = MagicMock()
+        mock_event.is_directory = False
+        mock_event.src_path = str(tmp_path / "test.json")
+
+        # Trigger on_modified
+        handler.on_modified(mock_event)
+
+        # Wait for debounce and check queue
+        async def check_queue():
+            await asyncio.sleep(0.2)  # Wait for debounce
+            assert not queue.empty()
+            file_event = queue.get_nowait()
+            assert file_event.event_type == "modified"
+            assert "test.json" in file_event.filepath
+
+        loop.run_until_complete(check_queue())
+
+    def test_on_created_event(self, event_loop_and_queue, tmp_path):
+        """Test on_created event handling."""
+        loop, queue = event_loop_and_queue
+
+        handler = JSONFileHandler(
+            callback=queue,
+            loop=loop,
+            file_pattern="*.json",
+            debounce_seconds=0.1,
+        )
+
+        mock_event = MagicMock()
+        mock_event.is_directory = False
+        mock_event.src_path = str(tmp_path / "new_file.json")
+
+        handler.on_created(mock_event)
+
+        async def check_queue():
+            await asyncio.sleep(0.2)
+            assert not queue.empty()
+            file_event = queue.get_nowait()
+            assert file_event.event_type == "created"
+
+        loop.run_until_complete(check_queue())
+
+    def test_debounce_multiple_events(self, event_loop_and_queue, tmp_path):
+        """Test that multiple rapid events are debounced into one."""
+        loop, queue = event_loop_and_queue
+
+        handler = JSONFileHandler(
+            callback=queue,
+            loop=loop,
+            file_pattern="*.json",
+            debounce_seconds=0.2,
+        )
+
+        filepath = str(tmp_path / "rapid.json")
+        mock_event = MagicMock()
+        mock_event.is_directory = False
+        mock_event.src_path = filepath
+
+        # Simulate rapid file modifications
+        handler.on_modified(mock_event)
+        handler.on_modified(mock_event)
+        handler.on_modified(mock_event)
+
+        async def check_queue():
+            await asyncio.sleep(0.4)  # Wait for debounce
+            # Should only have one event due to debouncing
+            count = 0
+            while not queue.empty():
+                queue.get_nowait()
+                count += 1
+            assert count == 1
+
+        loop.run_until_complete(check_queue())
+
+    def test_ignore_non_json_files(self, event_loop_and_queue, tmp_path):
+        """Test that non-JSON files are ignored."""
+        loop, queue = event_loop_and_queue
+
+        handler = JSONFileHandler(
+            callback=queue,
+            loop=loop,
+            file_pattern="*.json",
+            debounce_seconds=0.1,
+        )
+
+        mock_event = MagicMock()
+        mock_event.is_directory = False
+        mock_event.src_path = str(tmp_path / "test.txt")  # Not a JSON file
+
+        handler.on_modified(mock_event)
+
+        async def check_queue():
+            await asyncio.sleep(0.2)
+            assert queue.empty()  # No event should be queued
+
+        loop.run_until_complete(check_queue())
+
+    def test_ignore_directory_events(self, event_loop_and_queue, tmp_path):
+        """Test that directory events are ignored."""
+        loop, queue = event_loop_and_queue
+
+        handler = JSONFileHandler(
+            callback=queue,
+            loop=loop,
+            file_pattern="*.json",
+            debounce_seconds=0.1,
+        )
+
+        mock_event = MagicMock()
+        mock_event.is_directory = True
+        mock_event.src_path = str(tmp_path)
+
+        handler.on_modified(mock_event)
+
+        async def check_queue():
+            await asyncio.sleep(0.2)
+            assert queue.empty()
+
+        loop.run_until_complete(check_queue())

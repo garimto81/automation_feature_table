@@ -14,6 +14,7 @@ from src.fallback.manual_marker import MultiTableManualMarker, PairedMark
 from src.fusion.engine import MultiTableFusionEngine
 from src.grading.grader import HandGrader
 from src.models.hand import AIVideoResult, FusedHandResult, HandResult
+from src.primary.fallback_watcher import FallbackFileWatcher, WatcherMode
 from src.primary.json_file_watcher import JSONFileWatcher
 from src.primary.pokergfx_client import PokerGFXClient
 from src.recording.manager import RecordingManager
@@ -30,8 +31,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Type alias for Primary source (WebSocket or JSON file watcher)
-PrimarySource = PokerGFXClient | JSONFileWatcher
+# Type alias for Primary source (WebSocket, JSON watcher, or Fallback watcher)
+PrimarySource = PokerGFXClient | JSONFileWatcher | FallbackFileWatcher
 
 
 def create_primary_source(settings: PokerGFXSettings) -> PrimarySource:
@@ -41,7 +42,9 @@ def create_primary_source(settings: PokerGFXSettings) -> PrimarySource:
         settings: PokerGFX settings with mode configured
 
     Returns:
-        PokerGFXClient for websocket mode, JSONFileWatcher for json mode
+        PokerGFXClient for websocket mode,
+        FallbackFileWatcher for json mode with fallback enabled,
+        JSONFileWatcher for json mode without fallback
 
     Raises:
         ValueError: If mode is not recognized
@@ -54,8 +57,24 @@ def create_primary_source(settings: PokerGFXSettings) -> PrimarySource:
     elif mode == "json":
         if not settings.json_watch_path:
             raise ValueError("POKERGFX_JSON_PATH must be set for json mode")
-        logger.info(f"Using JSON file mode for Primary source: {settings.json_watch_path}")
-        return JSONFileWatcher(settings)
+
+        # Use FallbackFileWatcher if fallback is enabled (PRD-0010)
+        if settings.fallback_enabled:
+            logger.info(
+                f"Using JSON file mode with Fallback support: "
+                f"Primary={settings.json_watch_path}, Fallback={settings.fallback_path}"
+            )
+
+            def on_mode_change(new_mode: WatcherMode) -> None:
+                if new_mode == WatcherMode.FALLBACK:
+                    logger.warning("Switched to FALLBACK mode (local folder)")
+                elif new_mode == WatcherMode.PRIMARY:
+                    logger.info("Switched back to PRIMARY mode (SMB)")
+
+            return FallbackFileWatcher(settings, on_mode_change=on_mode_change)
+        else:
+            logger.info(f"Using JSON file mode for Primary source: {settings.json_watch_path}")
+            return JSONFileWatcher(settings)
     else:
         raise ValueError(f"Unknown POKERGFX_MODE: {mode}. Use 'websocket' or 'json'")
 
@@ -523,11 +542,12 @@ class PokerHandCaptureSystem:
 
     def get_system_stats(self) -> dict[str, object]:
         """Get comprehensive system statistics."""
-        stats = {
+        stats: dict[str, object] = {
             "fusion": self.fusion_engine.get_aggregate_stats(),
             "fallback": self.failure_detector.get_stats(),
             "manual_markers": self.manual_markers.get_all_stats(),
             "primary_mode": self.settings.pokergfx.mode,
+            "smb_fallback_enabled": self.settings.pokergfx.fallback_enabled,
         }
 
         if self.recording_manager:
@@ -536,6 +556,11 @@ class PokerHandCaptureSystem:
         # Add primary source specific stats
         if hasattr(self.primary_source, "get_stats"):
             stats["primary_source"] = self.primary_source.get_stats()
+
+        # Add fallback watcher mode if applicable
+        if isinstance(self.primary_source, FallbackFileWatcher):
+            stats["smb_watcher_mode"] = self.primary_source.current_mode.value
+            stats["using_smb_fallback"] = self.primary_source.is_using_fallback
 
         return stats
 
