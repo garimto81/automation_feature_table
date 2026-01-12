@@ -12,5 +12,8 @@ python-dotenv>=1.0.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
+# Build tools (optional - for creating executable)
+# pyinstaller>=6.0.0
+
 # Async support (built-in for Python 3.11+)
 # No additional packages needed
