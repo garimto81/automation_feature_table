@@ -1,0 +1,175 @@
+"""GFX 파일 감시 핸들러."""
+
+import asyncio
+import logging
+import threading
+from fnmatch import fnmatch
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers.polling import PollingObserver
+
+if TYPE_CHECKING:
+    from src.sync_agent.config import SyncAgentSettings
+    from src.sync_agent.sync_service import SyncService
+
+logger = logging.getLogger(__name__)
+
+
+class GFXFileHandler(FileSystemEventHandler):
+    """PokerGFX JSON 파일 감시 핸들러.
+
+    기능:
+    - GFX 파일 패턴 매칭 (PGFX_live_data_export GameID=*.json)
+    - 디바운스: 연속 이벤트 중 마지막만 처리
+    - 비동기 동기화 예약
+    """
+
+    FILE_PATTERN = "PGFX_live_data_export GameID=*.json"
+
+    def __init__(
+        self,
+        sync_service: "SyncService",
+        loop: asyncio.AbstractEventLoop,
+        debounce_seconds: float = 2.0,
+    ) -> None:
+        """초기화.
+
+        Args:
+            sync_service: SyncService 인스턴스
+            loop: asyncio 이벤트 루프
+            debounce_seconds: 디바운스 지연 시간 (초)
+        """
+        super().__init__()
+        self.sync_service = sync_service
+        self.loop = loop
+        self.debounce_seconds = debounce_seconds
+        self._pending: dict[str, asyncio.TimerHandle] = {}
+        self._lock = threading.Lock()
+
+    def _matches_pattern(self, path: str) -> bool:
+        """파일명이 GFX 패턴과 일치하는지 확인.
+
+        Args:
+            path: 파일 경로
+
+        Returns:
+            True if matches pattern
+        """
+        filename = Path(path).name
+        return fnmatch(filename, self.FILE_PATTERN)
+
+    def on_created(self, event: FileSystemEvent) -> None:
+        """파일 생성 이벤트.
+
+        Args:
+            event: watchdog 파일 이벤트
+        """
+        if event.is_directory:
+            return
+        if self._matches_pattern(str(event.src_path)):
+            self._schedule_sync(str(event.src_path), "created")
+
+    def on_modified(self, event: FileSystemEvent) -> None:
+        """파일 수정 이벤트.
+
+        Args:
+            event: watchdog 파일 이벤트
+        """
+        if event.is_directory:
+            return
+        if self._matches_pattern(str(event.src_path)):
+            self._schedule_sync(str(event.src_path), "modified")
+
+    def _schedule_sync(self, path: str, operation: str) -> None:
+        """디바운스 후 동기화 예약.
+
+        연속 이벤트가 발생하면 이전 타이머를 취소하고
+        마지막 이벤트만 처리합니다.
+
+        Args:
+            path: 파일 경로
+            operation: 작업 타입 (created/modified)
+        """
+        with self._lock:
+            # 기존 타이머 취소
+            if path in self._pending:
+                self._pending[path].cancel()
+
+            # 새 타이머 예약
+            def emit() -> None:
+                asyncio.run_coroutine_threadsafe(
+                    self.sync_service.sync_file(path, operation),
+                    self.loop,
+                )
+                with self._lock:
+                    self._pending.pop(path, None)
+
+            handle = self.loop.call_later(self.debounce_seconds, emit)
+            self._pending[path] = handle
+
+
+class GFXFileWatcher:
+    """GFX 파일 감시 워처.
+
+    PollingObserver를 사용하여 NAS/SMB 파일 시스템을 감시합니다.
+    """
+
+    def __init__(
+        self,
+        settings: "SyncAgentSettings",
+        sync_service: "SyncService",
+    ) -> None:
+        """초기화.
+
+        Args:
+            settings: SyncAgent 설정
+            sync_service: SyncService 인스턴스
+        """
+        self.settings = settings
+        self.sync_service = sync_service
+        self._observer: PollingObserver | None = None
+        self._running = False
+
+    async def start(self) -> None:
+        """감시 시작."""
+        loop = asyncio.get_running_loop()
+        handler = GFXFileHandler(
+            self.sync_service,
+            loop,
+            debounce_seconds=self.settings.file_settle_delay,
+        )
+
+        self._observer = PollingObserver(timeout=2.0)
+        self._observer.schedule(
+            handler,
+            self.settings.gfx_watch_path,
+            recursive=False,
+        )
+        self._observer.start()
+        self._running = True
+        logger.info(f"Watching: {self.settings.gfx_watch_path}")
+
+    async def stop(self) -> None:
+        """감시 중지."""
+        if self._observer:
+            self._observer.stop()
+            self._observer.join(timeout=5.0)
+        self._running = False
+        logger.info("GFX file watcher stopped")
+
+    async def run_forever(self) -> None:
+        """무한 루프 (메인용).
+
+        파일 감시 + 주기적 오프라인 큐 처리.
+        """
+        await self.start()
+        try:
+            while self._running:
+                await asyncio.sleep(self.settings.queue_process_interval)
+                await self.sync_service.process_offline_queue()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await self.stop()
