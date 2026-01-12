@@ -58,10 +58,35 @@ New-Item -ItemType Directory -Path "$TempDir\app" | Out-Null
 # 2. 파일 복사
 Write-Host "[2/5] Copying files..." -ForegroundColor Yellow
 
-# 앱 코드
-Copy-Item -Recurse "$ProjectRoot\src" "$TempDir\app\"
+# 앱 코드 (전체 src 폴더 복사)
+Copy-Item -Recurse -Force "$ProjectRoot\src" "$TempDir\app\"
 Copy-Item "$DeployDir\Dockerfile" "$TempDir\app\"
 Copy-Item "$DeployDir\requirements.txt" "$TempDir\app\"
+
+# 필수 파일 검증
+$RequiredFiles = @(
+    "$TempDir\app\src\__init__.py",
+    "$TempDir\app\src\main.py",
+    "$TempDir\app\src\dashboard\__init__.py",
+    "$TempDir\app\src\dashboard\monitoring_service.py",
+    "$TempDir\app\src\dashboard\alerts.py",
+    "$TempDir\app\src\database\__init__.py",
+    "$TempDir\app\src\primary\__init__.py",
+    "$TempDir\app\src\fusion\__init__.py"
+)
+
+$MissingFiles = @()
+foreach ($file in $RequiredFiles) {
+    if (-not (Test-Path $file)) {
+        $MissingFiles += $file
+    }
+}
+
+if ($MissingFiles.Count -gt 0) {
+    Write-Host "ERROR: Missing required files:" -ForegroundColor Red
+    $MissingFiles | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
+    throw "Deployment aborted due to missing files. Please check the source directory."
+}
 
 # Docker Compose
 Copy-Item "$DeployDir\docker-compose.yml" "$TempDir\"
@@ -102,12 +127,14 @@ scp $PackagePath "${SshTarget}:$NasPath/"
 # 5. NAS에서 압축 해제 및 실행
 Write-Host "[5/5] Deploying on NAS..." -ForegroundColor Yellow
 
+# --no-cache를 사용하여 Docker 빌드 캐시 문제 방지 (이슈 #4)
 $DeployCommand = @"
 cd $NasPath && \
 tar -xzvf $PackageName && \
 rm $PackageName && \
 docker-compose down 2>/dev/null || true && \
-docker-compose up -d --build
+docker-compose build --no-cache poker-capture && \
+docker-compose up -d --force-recreate
 "@
 
 if ($WithPgAdmin) {
@@ -116,7 +143,8 @@ cd $NasPath && \
 tar -xzvf $PackageName && \
 rm $PackageName && \
 docker-compose down 2>/dev/null || true && \
-docker-compose --profile admin up -d --build
+docker-compose build --no-cache && \
+docker-compose --profile admin up -d --force-recreate
 "@
 }
 
