@@ -1,7 +1,7 @@
 """Hand classification using phevaluator."""
 
 
-from phevaluator import evaluate_cards  # type: ignore[import-untyped]
+from phevaluator import evaluate_cards
 
 from src.models.hand import Card, HandRank
 

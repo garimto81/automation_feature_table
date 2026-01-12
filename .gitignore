@@ -50,3 +50,12 @@ nul
 
 # Local config
 .env.local
+
+# Claude temp files
+tmpclaude-*
+
+# Simulator settings (local)
+.simulator_settings.json
+
+# Supabase CLI temp
+supabase/.temp/

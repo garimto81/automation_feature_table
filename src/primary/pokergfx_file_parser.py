@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from phevaluator import evaluate_cards  # type: ignore[import-untyped]
+from phevaluator import evaluate_cards
 
 from src.models.hand import Card, HandRank, HandResult, PlayerInfo
 
@@ -137,8 +137,12 @@ class PokerGFXFileParser:
         for player_data in hand_data.get("Players", []):
             hole_cards_raw = player_data.get("HoleCards", [])
 
+            # Handle space-separated card string format: ['10d 9d'] -> ['10d', '9d']
+            if hole_cards_raw and len(hole_cards_raw) == 1 and ' ' in hole_cards_raw[0]:
+                hole_cards_raw = hole_cards_raw[0].split()
+
             # Skip players without hole cards (didn't show)
-            if not hole_cards_raw or len(hole_cards_raw) < 2:
+            if not hole_cards_raw or len(hole_cards_raw) < 2 or hole_cards_raw[0] == '':
                 continue
 
             # Need at least 3 community cards for evaluation
@@ -294,14 +298,24 @@ class PokerGFXFileParser:
 
         for event in events:
             if event.get("EventType") == "BOARD CARD":
-                board_cards = event.get("BoardCards", [])
-                if board_cards:
-                    for card_str in board_cards:
-                        try:
-                            converted = self._convert_card(card_str)
-                            cards.append(Card.from_string(converted))
-                        except (ValueError, IndexError) as e:
-                            logger.warning(f"Invalid card in board: {card_str} - {e}")
+                board_cards = event.get("BoardCards")
+                if not board_cards:
+                    continue
+
+                # Handle both string ("6d") and list (["6d", "7h"]) formats
+                if isinstance(board_cards, str):
+                    card_list = [board_cards]
+                else:
+                    card_list = board_cards
+
+                for card_str in card_list:
+                    if not card_str or card_str == '':
+                        continue
+                    try:
+                        converted = self._convert_card(card_str)
+                        cards.append(Card.from_string(converted))
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"Invalid card in board: {card_str} - {e}")
 
         return cards
 
