@@ -170,6 +170,10 @@ class FusedHandResult:
     cross_validated: bool
     requires_review: bool
     timestamp: datetime
+    community_cards: list[Card] = field(default_factory=list)
+    rank_value: int = 0
+    pot_size: int = 0
+    winner: str | None = None
 
     @property
     def rank_name(self) -> str:

@@ -15,7 +15,14 @@ import streamlit as st
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from src.simulator.config import get_simulator_settings
+from src.simulator.config import (
+    get_last_interval,
+    get_last_source_path,
+    get_last_target_path,
+    get_simulator_settings,
+    save_interval,
+    save_paths,
+)
 from src.simulator.gfx_json_simulator import GFXJsonSimulator, Status
 from src.simulator.gui.file_browser import (
     format_file_display,
@@ -53,6 +60,123 @@ def run_simulation_thread(simulator: GFXJsonSimulator) -> None:
         loop.close()
 
 
+def render_manual_import_tab() -> None:
+    """Render manual import tab for SMB fallback mode (PRD-0010)."""
+    st.header("📥 수동 Import")
+    st.markdown(
+        "SMB 연결 실패 시 수동으로 GFX JSON 파일을 업로드하여 처리할 수 있습니다.\n\n"
+        "업로드된 파일은 Fallback 폴더에 저장되어 자동으로 처리됩니다."
+    )
+
+    # Get fallback path from settings
+    try:
+        from src.config.settings import get_settings
+
+        settings = get_settings()
+        fallback_path = Path(settings.pokergfx.fallback_path)
+    except Exception:
+        fallback_path = Path("./data/manual_import")
+
+    # Ensure folder exists
+    fallback_path.mkdir(parents=True, exist_ok=True)
+
+    # Display current fallback path
+    st.info(f"📁 Fallback 폴더: `{fallback_path.absolute()}`")
+
+    # File uploader
+    uploaded_files = st.file_uploader(
+        "GFX JSON 파일 업로드",
+        type=["json"],
+        accept_multiple_files=True,
+        help="PokerGFX에서 생성된 JSON 파일을 업로드하세요.",
+    )
+
+    if uploaded_files:
+        st.subheader("📋 업로드된 파일")
+
+        for i, uploaded_file in enumerate(uploaded_files):
+            col1, col2, col3 = st.columns([3, 1, 1])
+
+            with col1:
+                st.text(uploaded_file.name)
+
+            with col2:
+                size_kb = len(uploaded_file.getvalue()) / 1024
+                st.text(f"{size_kb:.1f} KB")
+
+            with col3:
+                # Check if already saved
+                save_path = fallback_path / uploaded_file.name
+                if save_path.exists():
+                    st.warning("이미 존재")
+                else:
+                    st.success("저장 대기")
+
+        st.divider()
+
+        # Save button
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("💾 Fallback 폴더에 저장", type="primary", use_container_width=True):
+                saved_count = 0
+                skipped_count = 0
+
+                for uploaded_file in uploaded_files:
+                    save_path = fallback_path / uploaded_file.name
+
+                    if save_path.exists():
+                        # Add timestamp suffix to avoid overwrite
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        new_name = f"{save_path.stem}_{timestamp}{save_path.suffix}"
+                        save_path = fallback_path / new_name
+
+                    try:
+                        save_path.write_bytes(uploaded_file.getvalue())
+                        saved_count += 1
+                    except Exception as e:
+                        st.error(f"저장 실패: {uploaded_file.name} - {e}")
+                        skipped_count += 1
+
+                if saved_count > 0:
+                    st.success(f"✅ {saved_count}개 파일 저장 완료!")
+                if skipped_count > 0:
+                    st.warning(f"⚠️ {skipped_count}개 파일 저장 실패")
+
+        with col2:
+            if st.button("🗑️ 선택 초기화", use_container_width=True):
+                st.rerun()
+
+    # Show existing files in fallback folder
+    st.divider()
+    st.subheader("📂 Fallback 폴더 내 파일")
+
+    existing_files = list(fallback_path.glob("*.json"))
+
+    if existing_files:
+        # Sort by modification time (newest first)
+        existing_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+
+        for f in existing_files[:20]:  # Show last 20 files
+            col1, col2, col3 = st.columns([3, 1, 1])
+
+            with col1:
+                st.text(f.name)
+
+            with col2:
+                size_kb = f.stat().st_size / 1024
+                st.text(f"{size_kb:.1f} KB")
+
+            with col3:
+                mod_time = datetime.fromtimestamp(f.stat().st_mtime)
+                st.text(mod_time.strftime("%H:%M:%S"))
+
+        if len(existing_files) > 20:
+            st.caption(f"... 외 {len(existing_files) - 20}개 파일")
+    else:
+        st.caption("Fallback 폴더에 파일이 없습니다.")
+
+
 def main() -> None:
     """Main Streamlit app."""
     st.set_page_config(
@@ -61,8 +185,8 @@ def main() -> None:
         layout="wide",
     )
 
-    st.title("🎴 GFX JSON Simulator")
-    st.markdown("NAS 테스트를 위한 JSON 파일 시뮬레이터")
+    st.title("🎴 GFX JSON Simulator & Manual Import")
+    st.markdown("NAS 테스트를 위한 JSON 파일 시뮬레이터 및 수동 Import")
 
     # Initialize session state
     if "simulator" not in st.session_state:
@@ -70,13 +194,18 @@ def main() -> None:
     if "thread" not in st.session_state:
         st.session_state.thread = None
     if "source_path" not in st.session_state:
-        st.session_state.source_path = ""
+        # 저장된 경로 로드 (없으면 빈 문자열)
+        st.session_state.source_path = get_last_source_path() or ""
     if "target_path" not in st.session_state:
-        st.session_state.target_path = ""
+        # 저장된 경로 로드 (없으면 빈 문자열)
+        st.session_state.target_path = get_last_target_path() or ""
     if "scanned_files" not in st.session_state:
         st.session_state.scanned_files = []
     if "selected_files" not in st.session_state:
         st.session_state.selected_files = []
+    if "saved_interval" not in st.session_state:
+        # 저장된 interval 로드
+        st.session_state.saved_interval = get_last_interval()
 
     settings = get_simulator_settings()
 
@@ -105,12 +234,17 @@ def main() -> None:
                     if folder:
                         st.session_state.source_path = folder
                         st.session_state.scanned_files = []
+                        # 폴더 선택 시 영구 저장
+                        save_paths(source_path=folder)
                         st.rerun()
 
-        # Update session state
+        # Update session state and save to file
         if source_input != st.session_state.source_path:
             st.session_state.source_path = source_input
             st.session_state.scanned_files = []
+            # 경로 영구 저장
+            if source_input:
+                save_paths(source_path=source_input)
 
         # Scan button
         if st.button("🔍 파일 스캔", use_container_width=True):
@@ -143,17 +277,26 @@ def main() -> None:
                     )
                     if folder:
                         st.session_state.target_path = folder
+                        # 폴더 선택 시 영구 저장
+                        save_paths(target_path=folder)
                         st.rerun()
 
+        # Update session state and save to file
         if target_input != st.session_state.target_path:
             st.session_state.target_path = target_input
+            # 경로 영구 저장
+            if target_input:
+                save_paths(target_path=target_input)
 
         # === Interval Setting ===
         st.subheader("⏱️ 설정")
 
+        # 저장된 interval이 있으면 사용, 없으면 기본값 사용
+        default_interval = st.session_state.saved_interval or settings.interval_sec
+
         interval = st.number_input(
             "생성 간격 (초)",
-            value=settings.interval_sec,
+            value=default_interval,
             min_value=1,
             max_value=300,
             help="핸드 생성 간격 (초)",
@@ -180,6 +323,10 @@ def main() -> None:
                 elif not st.session_state.target_path:
                     st.error("Target path is required")
                 else:
+                    # 시작 시 interval 저장
+                    save_interval(interval)
+                    st.session_state.saved_interval = interval
+
                     # Create simulator with selected files
                     st.session_state.simulator = GFXJsonSimulator(
                         source_path=source,
@@ -218,8 +365,18 @@ def main() -> None:
             st.session_state.selected_files = []
             st.rerun()
 
-    # === Main Content ===
+    # === Main Content with Tabs ===
+    main_tab1, main_tab2 = st.tabs(["🎴 시뮬레이터", "📥 수동 Import"])
 
+    with main_tab2:
+        render_manual_import_tab()
+
+    with main_tab1:
+        render_simulator_tab(interval)
+
+
+def render_simulator_tab(interval: float) -> None:
+    """Render the simulator tab content."""
     # File selection section
     if st.session_state.scanned_files:
         st.header("📋 파일 선택")

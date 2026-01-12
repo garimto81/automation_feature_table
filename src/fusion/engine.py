@@ -83,6 +83,10 @@ class FusionEngine:
                 cross_validated=cross_validated,
                 requires_review=not cross_validated and secondary is not None,
                 timestamp=primary.timestamp,
+                community_cards=primary.community_cards,
+                rank_value=primary.rank_value,
+                pot_size=primary.pot_size,
+                winner=primary.winner,
             )
 
             logger.info(

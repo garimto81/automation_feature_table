@@ -172,23 +172,17 @@ Python 3.11+ 필수 (phevaluator, pydantic-settings 호환성)
 - `fusion-engine.png` - Fusion Engine 설계
 - `hand-grading.png` - 핸드 등급 분류
 
-### 로컬 문서 (tasks/prds/)
+### 문서 (통합 관리)
 
-| 파일 | 내용 |
-|------|------|
-| `PRD-0001-poker-hand-auto-capture.md` | 프로젝트 전체 요구사항 |
-| `PRD-0002-primary-gfx-rfid.md` | Primary 소스 (PokerGFX RFID) |
-| `PRD-0003-secondary-gemini-live.md` | Secondary 소스 (Gemini Live) |
-| `PRD-0004-fusion-engine.md` | Fusion Engine |
-| `PRD-0005-integrated-db-subtitle-system.md` | DB/자막 시스템 |
-| `PRD-0007-custom-rfid-client.md` | 커스텀 RFID 클라이언트 |
-| `PRD-0008-monitoring-dashboard.md` | 실시간 모니터링 대시보드 |
-| `PRD-0009-gfx-json-simulator.md` | GFX JSON 시뮬레이터 |
-| `PRD-0010-nas-smb-integration.md` | NAS SMB 연동 |
+> 이 프로젝트의 모든 문서는 **루트 프로젝트**에서 통합 관리됩니다.
+>
+> **절대 경로**: `C:\claude\docs\unified\`
 
-### Checklist (docs/checklists/)
+| 유형 | 위치 | 네임스페이스 |
+|------|------|-------------|
+| PRD | `docs/unified/prds/FT/` | FT-0001 ~ FT-0011 |
 
-PRD별 진행 체크리스트: `PRD-0001.md` ~ `PRD-0010.md`
+**전체 문서 인덱스**: [C:\claude\docs\unified\index.md](../docs/unified/index.md)
 
 ## 데이터 흐름
 
