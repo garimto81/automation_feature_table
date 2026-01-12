@@ -1,0 +1,16 @@
+# GFX Sync Agent Dependencies
+# For standalone installation on GFX PC
+
+# Supabase client
+supabase>=2.0.0
+
+# File watching
+watchdog>=3.0.0
+
+# Environment and settings
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Async support (built-in for Python 3.11+)
+# No additional packages needed
