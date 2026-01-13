@@ -431,7 +431,9 @@ def main() -> None:
                 (sim and sim.status in (Status.RUNNING, Status.PAUSED))
                 or (orch and orch.status == Status.RUNNING)
             )
-            if st.button("⏹️ 정지", disabled=stop_disabled, use_container_width=True, key="stop_btn"):
+            if st.button(
+                "⏹️ 정지", disabled=stop_disabled, use_container_width=True, key="stop_btn"
+            ):
                 if sim:
                     sim.stop()
                 if orch:
