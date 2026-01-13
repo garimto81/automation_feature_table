@@ -5,14 +5,26 @@ import logging
 import threading
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
 
 if TYPE_CHECKING:
     from src.sync_agent.config import SyncAgentSettings
-    from src.sync_agent.sync_service import SyncService
+
+
+@runtime_checkable
+class SyncServiceProtocol(Protocol):
+    """SyncService 인터페이스 프로토콜."""
+
+    async def sync_file(self, file_path: str, operation: str = "created") -> Any:
+        """파일 동기화."""
+        ...
+
+    async def process_offline_queue(self) -> int:
+        """오프라인 큐 처리."""
+        ...
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +42,19 @@ class GFXFileHandler(FileSystemEventHandler):
 
     def __init__(
         self,
-        sync_service: "SyncService",
+        sync_service: SyncServiceProtocol,
         loop: asyncio.AbstractEventLoop,
         debounce_seconds: float = 2.0,
     ) -> None:
         """초기화.
 
         Args:
-            sync_service: SyncService 인스턴스
+            sync_service: SyncService 또는 호환 인터페이스
             loop: asyncio 이벤트 루프
             debounce_seconds: 디바운스 지연 시간 (초)
         """
         super().__init__()
-        self.sync_service = sync_service
+        self.sync_service: SyncServiceProtocol = sync_service
         self.loop = loop
         self.debounce_seconds = debounce_seconds
         self._pending: dict[str, asyncio.TimerHandle] = {}
@@ -119,16 +131,16 @@ class GFXFileWatcher:
     def __init__(
         self,
         settings: "SyncAgentSettings",
-        sync_service: "SyncService",
+        sync_service: SyncServiceProtocol,
     ) -> None:
         """초기화.
 
         Args:
             settings: SyncAgent 설정
-            sync_service: SyncService 인스턴스
+            sync_service: SyncService 또는 호환 인터페이스
         """
         self.settings = settings
-        self.sync_service = sync_service
+        self.sync_service: SyncServiceProtocol = sync_service
         self._observer: PollingObserver | None = None
         self._running = False
 

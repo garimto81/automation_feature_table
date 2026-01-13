@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from src.simulator.config import SimulatorSettings, get_simulator_settings
 from src.simulator.hand_splitter import HandSplitter
@@ -103,7 +104,7 @@ class SimulationCheckpoint:
     hand_index: int = 0
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "file_index": self.file_index,
@@ -112,7 +113,7 @@ class SimulationCheckpoint:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SimulationCheckpoint":
+    def from_dict(cls, data: dict[str, Any]) -> SimulationCheckpoint:
         """Create from dictionary."""
         return cls(
             file_index=data.get("file_index", 0),
