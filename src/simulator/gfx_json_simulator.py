@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from src.simulator.config import SimulatorSettings, get_simulator_settings
 from src.simulator.hand_splitter import HandSplitter
@@ -205,7 +204,10 @@ class GFXJsonSimulator:
             parts = rel_path.parts
             table_name = parts[0] if parts else ""
 
-            self._log(f"Starting simulation: {rel_path} ({len(hands)} hands)", table_name=table_name)
+            self._log(
+                f"Starting simulation: {rel_path} ({len(hands)} hands)",
+                table_name=table_name,
+            )
 
             # Simulate each hand
             for i in range(1, len(hands) + 1):
