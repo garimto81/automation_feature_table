@@ -3,8 +3,8 @@
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-from xml.etree import ElementTree
 
+import defusedxml.ElementTree as ElementTree
 import httpx
 
 if TYPE_CHECKING:
