@@ -347,3 +347,66 @@ class TestGFXJsonSimulator:
         assert success is True
         assert output_file.exists()
         assert json.loads(output_file.read_text()) == {"test": True}
+
+    def test_pause_changes_status(self, temp_dirs: tuple[Path, Path]) -> None:
+        """pause() should change status to PAUSED."""
+        source, target = temp_dirs
+        sim = GFXJsonSimulator(source_path=source, target_path=target)
+        sim.status = Status.RUNNING
+
+        sim.pause()
+
+        assert sim.status == Status.PAUSED
+        assert not sim._pause_event.is_set()
+
+    def test_resume_changes_status(self, temp_dirs: tuple[Path, Path]) -> None:
+        """resume() should change status to RUNNING."""
+        source, target = temp_dirs
+        sim = GFXJsonSimulator(source_path=source, target_path=target)
+        sim.status = Status.PAUSED
+        sim._pause_event.clear()
+
+        sim.resume()
+
+        assert sim.status == Status.RUNNING
+        assert sim._pause_event.is_set()
+
+    def test_pause_only_when_running(self, temp_dirs: tuple[Path, Path]) -> None:
+        """pause() should only work when status is RUNNING."""
+        source, target = temp_dirs
+        sim = GFXJsonSimulator(source_path=source, target_path=target)
+        sim.status = Status.IDLE
+
+        sim.pause()
+
+        # Should not change status
+        assert sim.status == Status.IDLE
+
+    def test_resume_only_when_paused(self, temp_dirs: tuple[Path, Path]) -> None:
+        """resume() should only work when status is PAUSED."""
+        source, target = temp_dirs
+        sim = GFXJsonSimulator(source_path=source, target_path=target)
+        sim.status = Status.RUNNING
+
+        sim.resume()
+
+        # Should not change status
+        assert sim.status == Status.RUNNING
+
+    def test_checkpoint_update(
+        self, temp_dirs: tuple[Path, Path], sample_json_file: Path
+    ) -> None:
+        """Checkpoint should be updated during simulation."""
+        source, target = temp_dirs
+        sim = GFXJsonSimulator(
+            source_path=source,
+            target_path=target,
+            interval=0,
+        )
+
+        import asyncio
+        asyncio.run(sim.run())
+
+        checkpoint = sim.get_checkpoint()
+        assert checkpoint.file_index == 0
+        assert checkpoint.hand_index == 3  # Last hand in sample file

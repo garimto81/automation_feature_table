@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GFX JSON Simulator - Workflow Diagrams</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background: #f8fafc;
+            color: #1e293b;
+            padding: 40px;
+            line-height: 1.6;
+        }
+
+        h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            color: #0f172a;
+        }
+
+        h2 {
+            font-size: 24px;
+            margin: 40px 0 20px;
+            color: #334155;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+
+        h3 {
+            font-size: 18px;
+            margin: 30px 0 15px;
+            color: #475569;
+        }
+
+        .subtitle {
+            color: #64748b;
+            font-size: 16px;
+            margin-bottom: 40px;
+        }
+
+        /* Workflow Diagram */
+        .workflow {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .workflow-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1e293b;
+        }
+
+        .flow-container {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .flow-step {
+            background: #f1f5f9;
+            border: 2px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 14px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .flow-step.active {
+            background: #dbeafe;
+            border-color: #3b82f6;
+            color: #1e40af;
+        }
+
+        .flow-step.error {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #b91c1c;
+        }
+
+        .flow-step.success {
+            background: #dcfce7;
+            border-color: #22c55e;
+            color: #166534;
+        }
+
+        .flow-arrow {
+            font-size: 20px;
+            color: #94a3b8;
+        }
+
+        /* State Diagram */
+        .state-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .state-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .state-box {
+            width: 120px;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .state-idle {
+            background: #dbeafe;
+            border: 2px solid #3b82f6;
+            color: #1e40af;
+        }
+
+        .state-running {
+            background: #dcfce7;
+            border: 2px solid #22c55e;
+            color: #166534;
+        }
+
+        .state-stopped {
+            background: #ffedd5;
+            border: 2px solid #f97316;
+            color: #c2410c;
+        }
+
+        .state-completed {
+            background: #dcfce7;
+            border: 2px solid #22c55e;
+            color: #166534;
+        }
+
+        .state-error {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #b91c1c;
+        }
+
+        .transition-arrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        .transition-arrow::before {
+            content: '';
+            width: 40px;
+            height: 2px;
+            background: #94a3b8;
+        }
+
+        .transition-arrow::after {
+            content: '';
+            width: 0;
+            height: 0;
+            border-left: 8px solid #94a3b8;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+        }
+
+        /* Button Spec Table */
+        .spec-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .spec-table th {
+            background: #f1f5f9;
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 2px solid #e2e8f0;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        .spec-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: top;
+        }
+
+        .spec-table tr:hover {
+            background: #f8fafc;
+        }
+
+        .btn-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .btn-badge.primary {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .btn-badge.secondary {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-badge.enabled {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-badge.disabled {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        /* Data Flow Diagram */
+        .data-flow {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 30px;
+            margin-top: 20px;
+        }
+
+        .data-box {
+            width: 150px;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .data-box.source {
+            background: #dbeafe;
+            border: 2px solid #3b82f6;
+        }
+
+        .data-box.process {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+        }
+
+        .data-box.target {
+            background: #dcfce7;
+            border: 2px solid #22c55e;
+        }
+
+        .data-box .icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .data-box .label {
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .data-box .desc {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .data-arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .data-arrow .line {
+            width: 60px;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #22c55e);
+            position: relative;
+        }
+
+        .data-arrow .line::after {
+            content: '';
+            position: absolute;
+            right: -8px;
+            top: -5px;
+            width: 0;
+            height: 0;
+            border-left: 12px solid #22c55e;
+            border-top: 7px solid transparent;
+            border-bottom: 7px solid transparent;
+        }
+
+        .data-arrow .text {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        /* Error Handling Section */
+        .error-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .error-table th {
+            background: #fef2f2;
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 2px solid #fecaca;
+            font-weight: 600;
+            color: #b91c1c;
+        }
+
+        .error-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .error-type {
+            font-weight: 500;
+            color: #dc2626;
+        }
+
+        /* Button State Matrix */
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .matrix-table th {
+            background: #f1f5f9;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .matrix-table td {
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .matrix-table .check {
+            color: #22c55e;
+            font-size: 18px;
+        }
+
+        .matrix-table .cross {
+            color: #ef4444;
+            font-size: 18px;
+        }
+
+        /* Time Sequence */
+        .sequence {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin-top: 20px;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        .sequence-row {
+            display: flex;
+            gap: 20px;
+            padding: 4px 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .sequence-time {
+            width: 60px;
+            color: #94a3b8;
+        }
+
+        .sequence-file {
+            width: 150px;
+            color: #fbbf24;
+        }
+
+        .sequence-action {
+            flex: 1;
+            color: #4ade80;
+        }
+    </style>
+</head>
+<body>
+    <h1>GFX JSON Simulator</h1>
+    <p class="subtitle">Workflow Diagrams & Button Specifications</p>
+
+    <!-- Section 1: Basic Workflow -->
+    <h2>1. Basic Simulation Workflow</h2>
+
+    <div class="workflow">
+        <div class="workflow-title">Step-by-Step Process</div>
+        <div class="flow-container">
+            <div class="flow-step">1. Set Source Path</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">2. Scan Files</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">3. Select Files</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">4. Set Target Path</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">5. Set Interval</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step active">6. Start</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">7. Monitor</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step success">8. Complete</div>
+        </div>
+    </div>
+
+    <div class="workflow">
+        <div class="workflow-title">Manual Import Workflow (SMB Fallback)</div>
+        <div class="flow-container">
+            <div class="flow-step">1. Manual Import Tab</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">2. Upload Files</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">3. Save to Fallback</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step success">4. Auto Processing</div>
+        </div>
+    </div>
+
+    <!-- Section 2: State Transition -->
+    <h2>2. State Transition Diagram</h2>
+
+    <div class="workflow">
+        <div class="workflow-title">Simulator Status States</div>
+        <div class="state-diagram">
+            <div class="state-row">
+                <div class="state-box state-idle">IDLE</div>
+                <div class="transition-arrow">Start Click</div>
+                <div class="state-box state-running">RUNNING</div>
+            </div>
+            <div class="state-row" style="margin-left: 135px;">
+                <div class="transition-arrow">All Files Done</div>
+                <div class="state-box state-completed">COMPLETED</div>
+            </div>
+            <div class="state-row" style="margin-left: 135px;">
+                <div class="transition-arrow">Stop Click</div>
+                <div class="state-box state-stopped">STOPPED</div>
+            </div>
+            <div class="state-row" style="margin-left: 135px;">
+                <div class="transition-arrow">Write Failure</div>
+                <div class="state-box state-error">ERROR</div>
+            </div>
+            <div class="state-row">
+                <div class="state-box state-completed">Any State</div>
+                <div class="transition-arrow">Reset Click</div>
+                <div class="state-box state-idle">IDLE</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 3: Button Specifications -->
+    <h2>3. Button Action Specifications</h2>
+
+    <table class="spec-table">
+        <thead>
+            <tr>
+                <th>Button</th>
+                <th>Precondition</th>
+                <th>On Click</th>
+                <th>After Click</th>
+                <th>Re-click</th>
+                <th>Error Handling</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="btn-badge secondary">Browse Source</span></td>
+                <td>tkinter available</td>
+                <td>Open folder dialog (60s timeout)</td>
+                <td>Update source_path, clear scanned_files, save to JSON</td>
+                <td>Use previous path as initial dir</td>
+                <td>Cancel: no action<br>Timeout: return None</td>
+            </tr>
+            <tr>
+                <td><span class="btn-badge secondary">Scan Files</span></td>
+                <td>Always enabled</td>
+                <td>Validate path, show spinner, scan JSON files</td>
+                <td>Update scanned_files, clear selected_files, show count</td>
+                <td>Same action (refresh files)</td>
+                <td>Path not found: st.error<br>Parse fail: skip file</td>
+            </tr>
+            <tr>
+                <td><span class="btn-badge secondary">Browse Target</span></td>
+                <td>tkinter available</td>
+                <td>Open folder dialog (60s timeout)</td>
+                <td>Update target_path, save to JSON</td>
+                <td>Use previous path as initial dir</td>
+                <td>Cancel: no action<br>NAS path: manual input</td>
+            </tr>
+            <tr>
+                <td><span class="btn-badge primary">Start</span></td>
+                <td>selected_files not empty<br>status != RUNNING</td>
+                <td>Validate paths, save interval, create simulator, start thread</td>
+                <td>status → RUNNING, init progress, 1s refresh, disable button</td>
+                <td>Disabled while RUNNING</td>
+                <td>Source not found: st.error<br>Target empty: st.error</td>
+            </tr>
+            <tr>
+                <td><span class="btn-badge secondary">Stop</span></td>
+                <td>status == RUNNING</td>
+                <td>Call simulator.stop(), set _stop_requested</td>
+                <td>status → STOPPED, log message, finish current hand</td>
+                <td>Disabled after STOPPED</td>
+                <td>Already stopped: button disabled</td>
+            </tr>
+            <tr>
+                <td><span class="btn-badge secondary">Reset</span></td>
+                <td>Always enabled</td>
+                <td>Clear all session_state</td>
+                <td>status → IDLE, clear progress/logs/files</td>
+                <td>Same action (no change if already reset)</td>
+                <td>During RUNNING: daemon thread auto-terminates</td>
+            </tr>
+            <tr>
+                <td><span class="btn-badge primary">Save to Fallback</span></td>
+                <td>uploaded_files not empty</td>
+                <td>Check duplicates, add timestamp suffix, write_bytes()</td>
+                <td>st.success with count, st.warning for failures</td>
+                <td>Save only new uploads</td>
+                <td>No permission: st.error<br>Disk full: OSError</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Section 4: Button State Matrix -->
+    <h2>4. Button State Matrix</h2>
+
+    <table class="matrix-table">
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Browse Source</th>
+                <th>Scan Files</th>
+                <th>Browse Target</th>
+                <th>Start</th>
+                <th>Stop</th>
+                <th>Reset</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>IDLE (initial)</strong></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="cross">✗</span>*</td>
+                <td><span class="cross">✗</span></td>
+                <td><span class="check">✓</span></td>
+            </tr>
+            <tr>
+                <td><strong>IDLE (files selected)</strong></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="cross">✗</span></td>
+                <td><span class="check">✓</span></td>
+            </tr>
+            <tr>
+                <td><strong>RUNNING</strong></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="cross">✗</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+            </tr>
+            <tr>
+                <td><strong>STOPPED</strong></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span>**</td>
+                <td><span class="cross">✗</span></td>
+                <td><span class="check">✓</span></td>
+            </tr>
+            <tr>
+                <td><strong>COMPLETED</strong></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span>**</td>
+                <td><span class="cross">✗</span></td>
+                <td><span class="check">✓</span></td>
+            </tr>
+            <tr>
+                <td><strong>ERROR</strong></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span></td>
+                <td><span class="check">✓</span>**</td>
+                <td><span class="cross">✗</span></td>
+                <td><span class="check">✓</span></td>
+            </tr>
+        </tbody>
+    </table>
+    <p style="margin-top: 10px; font-size: 13px; color: #64748b;">
+        * Disabled if no files selected<br>
+        ** Can restart without reset
+    </p>
+
+    <!-- Section 5: Data Flow -->
+    <h2>5. Data Flow Diagram</h2>
+
+    <div class="workflow">
+        <div class="workflow-title">Simulation Data Pipeline</div>
+        <div class="data-flow">
+            <div class="data-box source">
+                <div class="icon">📁</div>
+                <div class="label">Source Folder</div>
+                <div class="desc">GFX JSON files<br>(Hands array)</div>
+            </div>
+            <div class="data-arrow">
+                <div class="line"></div>
+                <div class="text">HandSplitter.split_hands()</div>
+            </div>
+            <div class="data-box process">
+                <div class="icon">⚙️</div>
+                <div class="label">Processing</div>
+                <div class="desc">Cumulative JSON<br>(1 hand at a time)</div>
+            </div>
+            <div class="data-arrow">
+                <div class="line"></div>
+                <div class="text">interval wait + write</div>
+            </div>
+            <div class="data-box target">
+                <div class="icon">🗄️</div>
+                <div class="label">Target (NAS)</div>
+                <div class="desc">Output files<br>(same structure)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 6: Time Sequence -->
+    <h2>6. Time Sequence Example</h2>
+
+    <div class="workflow">
+        <div class="workflow-title">Example: 3 files (10, 8, 5 hands), interval=60s</div>
+        <div class="sequence">
+            <div class="sequence-row">
+                <span class="sequence-time">0s</span>
+                <span class="sequence-file">File1 (10)</span>
+                <span class="sequence-action">Hand 1/10 generated</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">60s</span>
+                <span class="sequence-file">File1 (10)</span>
+                <span class="sequence-action">Hand 2/10 generated</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">...</span>
+                <span class="sequence-file">File1 (10)</span>
+                <span class="sequence-action">...</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">540s</span>
+                <span class="sequence-file">File1 (10)</span>
+                <span class="sequence-action">Hand 10/10 generated ✓ File1 Complete</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">540s</span>
+                <span class="sequence-file">File2 (8)</span>
+                <span class="sequence-action">Starting File2...</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">600s</span>
+                <span class="sequence-file">File2 (8)</span>
+                <span class="sequence-action">Hand 1/8 generated</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">...</span>
+                <span class="sequence-file">File2 (8)</span>
+                <span class="sequence-action">...</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">1020s</span>
+                <span class="sequence-file">File2 (8)</span>
+                <span class="sequence-action">Hand 8/8 generated ✓ File2 Complete</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">1020s</span>
+                <span class="sequence-file">File3 (5)</span>
+                <span class="sequence-action">Starting File3...</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">1080s</span>
+                <span class="sequence-file">File3 (5)</span>
+                <span class="sequence-action">Hand 1/5 generated</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">...</span>
+                <span class="sequence-file">File3 (5)</span>
+                <span class="sequence-action">...</span>
+            </div>
+            <div class="sequence-row">
+                <span class="sequence-time">1320s</span>
+                <span class="sequence-file">File3 (5)</span>
+                <span class="sequence-action">Hand 5/5 generated ✓ All Complete!</span>
+            </div>
+            <div class="sequence-row" style="border: none;">
+                <span class="sequence-time"></span>
+                <span class="sequence-file" style="color: #4ade80;">Total</span>
+                <span class="sequence-action" style="color: #fbbf24;">1260 seconds = 21 minutes</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 7: Error Handling -->
+    <h2>7. Error Handling Summary</h2>
+
+    <table class="error-table">
+        <thead>
+            <tr>
+                <th>Error Type</th>
+                <th>When</th>
+                <th>Detection</th>
+                <th>Response</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="error-type">Path Not Found</span></td>
+                <td>Start button click</td>
+                <td>Path.exists()</td>
+                <td>st.error display, abort start</td>
+            </tr>
+            <tr>
+                <td><span class="error-type">No Files Found</span></td>
+                <td>File scan</td>
+                <td>rglob result = 0</td>
+                <td>st.warning("No files found")</td>
+            </tr>
+            <tr>
+                <td><span class="error-type">JSON Parse Error</span></td>
+                <td>Scan / Simulation</td>
+                <td>json.loads exception</td>
+                <td>Skip file, log error</td>
+            </tr>
+            <tr>
+                <td><span class="error-type">Write Failure</span></td>
+                <td>Simulation</td>
+                <td>OSError</td>
+                <td>Retry 3 times (5s interval), then ERROR status</td>
+            </tr>
+            <tr>
+                <td><span class="error-type">NAS Disconnection</span></td>
+                <td>Simulation</td>
+                <td>Retry failure</td>
+                <td>ERROR status, log message</td>
+            </tr>
+            <tr>
+                <td><span class="error-type">Memory Overflow</span></td>
+                <td>Large file processing</td>
+                <td>MemoryError</td>
+                <td>Python exception, process termination</td>
+            </tr>
+            <tr>
+                <td><span class="error-type">tkinter Unavailable</span></td>
+                <td>App startup</td>
+                <td>ImportError</td>
+                <td>Hide folder browse buttons</td>
+            </tr>
+            <tr>
+                <td><span class="error-type">Thread Conflict</span></td>
+                <td>Start button click</td>
+                <td>status check</td>
+                <td>Button disabled (prevented)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Section 8: Settings Persistence -->
+    <h2>8. Settings Persistence Flow</h2>
+
+    <div class="workflow">
+        <div class="workflow-title">Settings Auto-Save & Load</div>
+        <div class="flow-container">
+            <div class="flow-step">App Start</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">Load .simulator_settings.json</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">Populate UI with saved values</div>
+        </div>
+        <div class="flow-container" style="margin-top: 15px;">
+            <div class="flow-step">User Changes Setting</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step">save_paths() / save_interval()</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-step success">.simulator_settings.json Updated</div>
+        </div>
+    </div>
+
+    <div class="workflow" style="background: #f0fdf4;">
+        <div class="workflow-title">Saved Settings Structure</div>
+        <pre style="background: #1e293b; color: #e2e8f0; padding: 15px; border-radius: 8px; font-size: 13px;">
+{
+  "last_source_path": "C:\\gfx_json\\tournament",
+  "last_target_path": "\\\\NAS\\pokergfx\\hands",
+  "last_interval": 60
+}
+        </pre>
+    </div>
+</body>
+</html>

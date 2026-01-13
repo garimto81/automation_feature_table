@@ -23,7 +23,11 @@ from src.simulator.config import (
     save_interval,
     save_paths,
 )
-from src.simulator.gfx_json_simulator import GFXJsonSimulator, Status
+from src.simulator.gfx_json_simulator import (
+    GFXJsonSimulator,
+    ParallelSimulationOrchestrator,
+    Status,
+)
 from src.simulator.gui.file_browser import (
     format_file_display,
     is_tkinter_available,
@@ -56,6 +60,19 @@ def run_simulation_thread(simulator: GFXJsonSimulator) -> None:
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(simulator.run())
+    finally:
+        loop.close()
+
+
+def run_parallel_simulation_thread(
+    orchestrator: ParallelSimulationOrchestrator,
+    selected_files: list[Path],
+) -> None:
+    """Run parallel simulation in background thread."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(orchestrator.run(selected_files))
     finally:
         loop.close()
 
@@ -191,6 +208,10 @@ def main() -> None:
     # Initialize session state
     if "simulator" not in st.session_state:
         st.session_state.simulator = None
+    if "orchestrator" not in st.session_state:
+        st.session_state.orchestrator = None
+    if "parallel_mode" not in st.session_state:
+        st.session_state.parallel_mode = False
     if "thread" not in st.session_state:
         st.session_state.thread = None
     if "source_path" not in st.session_state:
@@ -302,16 +323,28 @@ def main() -> None:
             help="핸드 생성 간격 (초)",
         )
 
+        # Parallel mode toggle
+        parallel_mode = st.checkbox(
+            "🔀 병렬 시뮬레이션",
+            value=st.session_state.parallel_mode,
+            help="테이블별로 동시에 처리합니다",
+        )
+        st.session_state.parallel_mode = parallel_mode
+
         st.divider()
 
         # === Control Buttons ===
         col1, col2 = st.columns(2)
 
         with col1:
-            start_disabled = (
-                st.session_state.simulator is not None
-                and st.session_state.simulator.status == Status.RUNNING
-            ) or not st.session_state.selected_files
+            # Check if running (either simulator or orchestrator)
+            is_running = (
+                (st.session_state.simulator is not None
+                 and st.session_state.simulator.status == Status.RUNNING)
+                or (st.session_state.orchestrator is not None
+                    and st.session_state.orchestrator.status == Status.RUNNING)
+            )
+            start_disabled = is_running or not st.session_state.selected_files
             if st.button(
                 "▶️ 시작", disabled=start_disabled, use_container_width=True
             ):
@@ -327,43 +360,93 @@ def main() -> None:
                     save_interval(interval)
                     st.session_state.saved_interval = interval
 
-                    # Create simulator with selected files
-                    st.session_state.simulator = GFXJsonSimulator(
-                        source_path=source,
-                        target_path=target,
-                        interval=interval,
-                    )
-                    # Override discovered files with selected ones
                     selected_paths = [
                         Path(f["path"]) for f in st.session_state.selected_files
                     ]
-                    st.session_state.simulator._selected_files = selected_paths
 
-                    st.session_state.thread = threading.Thread(
-                        target=run_simulation_thread,
-                        args=(st.session_state.simulator,),
-                        daemon=True,
-                    )
+                    if st.session_state.parallel_mode:
+                        # Parallel mode: use orchestrator
+                        st.session_state.orchestrator = ParallelSimulationOrchestrator(
+                            source_path=source,
+                            target_path=target,
+                            interval=interval,
+                        )
+                        st.session_state.simulator = None
+
+                        st.session_state.thread = threading.Thread(
+                            target=run_parallel_simulation_thread,
+                            args=(st.session_state.orchestrator, selected_paths),
+                            daemon=True,
+                        )
+                    else:
+                        # Sequential mode: use simulator
+                        st.session_state.simulator = GFXJsonSimulator(
+                            source_path=source,
+                            target_path=target,
+                            interval=interval,
+                        )
+                        st.session_state.simulator._selected_files = selected_paths
+                        st.session_state.orchestrator = None
+
+                        st.session_state.thread = threading.Thread(
+                            target=run_simulation_thread,
+                            args=(st.session_state.simulator,),
+                            daemon=True,
+                        )
+
                     st.session_state.thread.start()
                     st.rerun()
 
         with col2:
-            stop_disabled = (
-                st.session_state.simulator is None
-                or st.session_state.simulator.status != Status.RUNNING
-            )
-            if st.button("⏹️ 정지", disabled=stop_disabled, use_container_width=True):
-                if st.session_state.simulator:
-                    st.session_state.simulator.stop()
-                    st.rerun()
+            # Show different button based on status
+            simulator = st.session_state.simulator
+            orchestrator = st.session_state.orchestrator
 
-        # Reset button
-        if st.button("🔄 초기화", use_container_width=True):
-            st.session_state.simulator = None
-            st.session_state.thread = None
-            st.session_state.scanned_files = []
-            st.session_state.selected_files = []
-            st.rerun()
+            # Determine active runner
+            if simulator and simulator.status == Status.RUNNING:
+                # Show pause button when running (sequential mode only)
+                if st.button("⏸️ 일시정지", use_container_width=True):
+                    simulator.pause()
+                    st.rerun()
+            elif simulator and simulator.status == Status.PAUSED:
+                # Show resume button when paused
+                if st.button("▶️ 재개", use_container_width=True):
+                    simulator.resume()
+                    st.rerun()
+            elif orchestrator and orchestrator.status == Status.RUNNING:
+                # Parallel mode running - no pause support
+                st.button("⏸️ 일시정지", disabled=True, use_container_width=True,
+                          help="병렬 모드에서는 일시정지를 지원하지 않습니다")
+            else:
+                # Show disabled button
+                st.button("⏸️ 일시정지", disabled=True, use_container_width=True)
+
+        # Separate stop button for immediate stop
+        col3, col4 = st.columns(2)
+        with col3:
+            # Check if any runner is active
+            sim = st.session_state.simulator
+            orch = st.session_state.orchestrator
+            stop_disabled = not (
+                (sim and sim.status in (Status.RUNNING, Status.PAUSED))
+                or (orch and orch.status == Status.RUNNING)
+            )
+            if st.button("⏹️ 정지", disabled=stop_disabled, use_container_width=True, key="stop_btn"):
+                if sim:
+                    sim.stop()
+                if orch:
+                    orch.stop()
+                st.rerun()
+
+        with col4:
+            # Reset button
+            if st.button("🔄 초기화", use_container_width=True):
+                st.session_state.simulator = None
+                st.session_state.orchestrator = None
+                st.session_state.thread = None
+                st.session_state.scanned_files = []
+                st.session_state.selected_files = []
+                st.rerun()
 
     # === Main Content with Tabs ===
     main_tab1, main_tab2 = st.tabs(["🎴 시뮬레이터", "📥 수동 Import"])
@@ -377,6 +460,10 @@ def main() -> None:
 
 def render_simulator_tab(interval: float) -> None:
     """Render the simulator tab content."""
+    # Get active runner
+    simulator = st.session_state.simulator
+    orchestrator = st.session_state.orchestrator
+
     # File selection section
     if st.session_state.scanned_files:
         st.header("📋 파일 선택")
@@ -455,15 +542,27 @@ def render_simulator_tab(interval: float) -> None:
                 est_time = total_hands * interval
                 st.metric("예상 소요 시간", format_duration(est_time))
 
-    # Simulator status section
-    simulator = st.session_state.simulator
+    # Simulator/Orchestrator status section
+    # (simulator and orchestrator already fetched at top of function)
 
-    if simulator is None:
+    if simulator is None and orchestrator is None:
         if not st.session_state.scanned_files:
             st.info("👆 좌측에서 소스 경로를 지정하고 '파일 스캔' 버튼을 클릭하세요.")
         elif not st.session_state.selected_files:
             st.info("👆 시뮬레이션할 파일을 선택하세요.")
         return
+
+    # Determine active runner and its status/progress
+    if orchestrator is not None:
+        active_status = orchestrator.status
+        progress = orchestrator.aggregate_progress
+        active_logs = orchestrator.get_logs
+        mode_label = "🔀 병렬"
+    else:
+        active_status = simulator.status  # type: ignore[union-attr]
+        progress = simulator.progress  # type: ignore[union-attr]
+        active_logs = simulator.get_logs  # type: ignore[union-attr]
+        mode_label = "📄 순차"
 
     # Status display
     st.divider()
@@ -475,13 +574,12 @@ def render_simulator_tab(interval: float) -> None:
         Status.COMPLETED: "✅",
         Status.ERROR: "❌",
     }
-    status_icon = status_colors.get(simulator.status, "⚪")
-    st.subheader(f"{status_icon} 상태: {simulator.status.value.upper()}")
+    status_icon = status_colors.get(active_status, "⚪")
+    st.subheader(f"{status_icon} 상태: {active_status.value.upper()} ({mode_label})")
 
     # Progress section
     st.header("📊 진행 상황")
 
-    progress = simulator.progress
     progress_pct = progress.progress
 
     # Progress bar
@@ -520,7 +618,7 @@ def render_simulator_tab(interval: float) -> None:
     # Logs section
     st.header("📝 실시간 로그")
 
-    logs = simulator.get_logs(limit=50)
+    logs = active_logs(limit=50)
 
     if logs:
         log_container = st.container(height=400)
@@ -537,8 +635,8 @@ def render_simulator_tab(interval: float) -> None:
     else:
         st.caption("로그가 없습니다.")
 
-    # Auto-refresh while running
-    if simulator.status == Status.RUNNING:
+    # Auto-refresh while running or paused
+    if active_status in (Status.RUNNING, Status.PAUSED):
         time.sleep(1)
         st.rerun()
 
