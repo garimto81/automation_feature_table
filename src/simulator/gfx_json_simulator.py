@@ -112,7 +112,7 @@ class SimulationCheckpoint:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SimulationCheckpoint":
+    def from_dict(cls, data: dict) -> SimulationCheckpoint:
         """Create from dictionary."""
         return cls(
             file_index=data.get("file_index", 0),
