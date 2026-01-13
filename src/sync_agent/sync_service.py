@@ -351,7 +351,7 @@ class SyncService:
             except Exception as e:
                 logger.error(f"Queue batch failed: {e}")
                 # 실패 시 재시도 카운트 증가
-                for item_id, file_path in processed_items:
+                for item_id, _ in processed_items:
                     retry_count = self.local_queue.increment_retry(item_id)
                     if retry_count >= self.settings.max_retries:
                         self.local_queue.mark_failed(

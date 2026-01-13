@@ -561,9 +561,9 @@ def render_simulator_tab(interval: float) -> None:
         active_logs = orchestrator.get_logs
         mode_label = "🔀 병렬"
     else:
-        active_status = simulator.status  # type: ignore[union-attr]
-        progress = simulator.progress  # type: ignore[union-attr]
-        active_logs = simulator.get_logs  # type: ignore[union-attr]
+        active_status = simulator.status
+        progress = simulator.progress
+        active_logs = simulator.get_logs
         mode_label = "📄 순차"
 
     # Status display
