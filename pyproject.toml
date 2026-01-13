@@ -16,6 +16,8 @@ dependencies = [
     "pydantic-settings>=2.1.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.25.0",
+    "urllib3>=2.6.3",  # CVE-2026-21441 fix
+    "defusedxml>=0.7.1",  # XML parsing security
     # Database - Supabase (primary)
     "supabase>=2.0.0",
     # Database - PostgreSQL (legacy/deprecated)
