@@ -1,9 +1,8 @@
 """SyncService 테스트."""
 
 import json
-import os
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,7 +30,9 @@ class TestSyncService:
         return file_path
 
     @pytest.fixture
-    def mock_settings(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SyncAgentSettings:
+    def mock_settings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> SyncAgentSettings:
         """Mock 설정."""
         # 환경변수 설정
         monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
@@ -74,53 +75,34 @@ class TestSyncService:
         assert hash1 == hash2
         assert len(hash1) == 64  # SHA256 hex length
 
-    async def test_is_duplicate_true(
-        self, sync_service: SyncService, mock_supabase_client: MagicMock
+    def test_prepare_record(
+        self, sync_service: SyncService, sample_gfx_json: Path
     ) -> None:
-        """이미 존재하는 해시."""
-        with patch("src.sync_agent.sync_service.create_client") as mock_create:
-            mock_create.return_value = mock_supabase_client
+        """레코드 준비 테스트."""
+        record = sync_service._prepare_record(sample_gfx_json)
 
-            # 중복 해시 응답 설정
-            mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = (
-                MagicMock(data=[{"file_hash": "abc123"}])
-            )
+        assert record["session_id"] == "game_123"
+        assert record["file_name"] == sample_gfx_json.name
+        assert record["table_type"] == "Tournament"
+        assert record["event_title"] == "WSOP Main Event"
+        assert record["hand_count"] == 2
+        assert record["sync_source"] == "gfx_pc_direct"
+        assert record["sync_status"] == "synced"
+        assert "file_hash" in record
+        assert len(record["file_hash"]) == 64
 
-            result = await sync_service._is_duplicate("abc123")
-            assert result is True
-
-    async def test_is_duplicate_false(
-        self, sync_service: SyncService, mock_supabase_client: MagicMock
-    ) -> None:
-        """새 해시."""
-        with patch("src.sync_agent.sync_service.create_client") as mock_create:
-            mock_create.return_value = mock_supabase_client
-
-            # 빈 응답 설정
-            mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = (
-                MagicMock(data=[])
-            )
-
-            result = await sync_service._is_duplicate("new_hash")
-            assert result is False
-
-    async def test_sync_file_success(
+    async def test_sync_file_realtime_success(
         self,
         sync_service: SyncService,
         sample_gfx_json: Path,
         mock_supabase_client: MagicMock,
     ) -> None:
-        """파일 업로드 성공."""
+        """실시간 동기화(created 이벤트) 성공."""
         with patch("src.sync_agent.sync_service.create_client") as mock_create:
             mock_create.return_value = mock_supabase_client
 
-            # 중복 체크 - 없음
-            mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = (
-                MagicMock(data=[])
-            )
-
-            # 업로드 성공
-            mock_supabase_client.table.return_value.insert.return_value.execute.return_value = (
+            # upsert 성공
+            mock_supabase_client.table.return_value.upsert.return_value.execute.return_value = (
                 MagicMock(data=[{"id": 1}])
             )
 
@@ -132,29 +114,25 @@ class TestSyncService:
             assert result.queued is False
             assert result.error_message is None
 
-    async def test_sync_file_skip_duplicate(
+            # upsert가 호출되었는지 확인
+            mock_supabase_client.table.return_value.upsert.assert_called_once()
+
+    async def test_sync_file_batch_queue(
         self,
         sync_service: SyncService,
         sample_gfx_json: Path,
         mock_supabase_client: MagicMock,
     ) -> None:
-        """중복 파일 스킵."""
+        """배치 큐(modified 이벤트) 성공."""
         with patch("src.sync_agent.sync_service.create_client") as mock_create:
             mock_create.return_value = mock_supabase_client
 
-            # 중복 해시 있음
-            mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = (
-                MagicMock(data=[{"file_hash": "existing"}])
-            )
-
-            result = await sync_service.sync_file(str(sample_gfx_json), "created")
+            result = await sync_service.sync_file(str(sample_gfx_json), "modified")
 
             assert result.success is True
             assert result.session_id == "game_123"
             assert result.hand_count == 2
-            assert result.queued is False
-            # insert가 호출되지 않아야 함
-            mock_supabase_client.table.return_value.insert.assert_not_called()
+            assert result.queued is True  # 배치 큐에 추가됨
 
     async def test_sync_file_queue_on_error(
         self,
@@ -163,18 +141,13 @@ class TestSyncService:
         mock_supabase_client: MagicMock,
         local_queue: LocalQueue,
     ) -> None:
-        """연결 오류 시 큐잉."""
+        """연결 오류 시 로컬 큐에 저장."""
         with patch("src.sync_agent.sync_service.create_client") as mock_create:
             mock_create.return_value = mock_supabase_client
 
-            # 중복 체크 통과
-            mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = (
-                MagicMock(data=[])
-            )
-
-            # 업로드 실패
-            mock_supabase_client.table.return_value.insert.return_value.execute.side_effect = (
-                Exception("Connection error")
+            # upsert 실패
+            mock_supabase_client.table.return_value.upsert.return_value.execute.side_effect = Exception(
+                "Connection error"
             )
 
             result = await sync_service.sync_file(str(sample_gfx_json), "created")
@@ -187,27 +160,22 @@ class TestSyncService:
             stats = local_queue.get_stats()
             assert stats["pending"] == 1
 
-    async def test_process_offline_queue(
+    async def test_process_offline_queue_success(
         self,
         sync_service: SyncService,
         mock_supabase_client: MagicMock,
         local_queue: LocalQueue,
         sample_gfx_json: Path,
     ) -> None:
-        """오프라인 큐 처리."""
+        """오프라인 큐 배치 처리 성공."""
         with patch("src.sync_agent.sync_service.create_client") as mock_create:
             mock_create.return_value = mock_supabase_client
 
             # 큐에 항목 추가
             local_queue.enqueue(str(sample_gfx_json), "created")
 
-            # 중복 체크 통과
-            mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = (
-                MagicMock(data=[])
-            )
-
-            # 업로드 성공
-            mock_supabase_client.table.return_value.insert.return_value.execute.return_value = (
+            # upsert 성공
+            mock_supabase_client.table.return_value.upsert.return_value.execute.return_value = (
                 MagicMock(data=[{"id": 1}])
             )
 
@@ -220,7 +188,7 @@ class TestSyncService:
             assert stats["completed"] == 1
             assert stats["pending"] == 0
 
-    async def test_process_offline_queue_partial_success(
+    async def test_process_offline_queue_batch_failure(
         self,
         sync_service: SyncService,
         mock_supabase_client: MagicMock,
@@ -228,7 +196,7 @@ class TestSyncService:
         sample_gfx_json: Path,
         tmp_path: Path,
     ) -> None:
-        """큐 처리 - 일부 성공."""
+        """오프라인 큐 배치 처리 실패 시 재시도 카운트 증가."""
         # 두 번째 파일 생성
         file2 = tmp_path / "file2.json"
         file2.write_text(json.dumps({"ID": "game_456", "Hands": []}))
@@ -240,30 +208,54 @@ class TestSyncService:
             local_queue.enqueue(str(sample_gfx_json), "created")
             local_queue.enqueue(str(file2), "created")
 
-            # 중복 체크는 항상 통과 (빈 리스트 반환)
-            # select().eq().execute() 체인에 대한 응답
-            duplicate_check_mock = MagicMock()
-            duplicate_check_mock.data = []
-            mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = (
-                duplicate_check_mock
+            # upsert 실패
+            mock_supabase_client.table.return_value.upsert.return_value.execute.side_effect = Exception(
+                "Network error"
             )
-
-            # insert().execute() - 첫 번째 성공, 두 번째 실패
-            mock_supabase_client.table.return_value.insert.return_value.execute.side_effect = [
-                MagicMock(data=[{"id": 1}]),
-                Exception("Network error"),
-            ]
 
             success_count = await sync_service.process_offline_queue()
 
-            assert success_count == 1
+            # 배치 실패로 0건 처리
+            assert success_count == 0
 
-            # 1개 완료, 1개 재시도 대기 (retry_count가 증가했지만 여전히 pending)
-            stats = local_queue.get_stats()
-            assert stats["completed"] == 1
-            # 실패한 두 번째 항목은 여전히 pending
-            assert stats["pending"] >= 1
-            assert stats["failed"] == 0  # max_retries에 도달하지 않음
+            # 원본 아이템들의 재시도 카운트가 증가했어야 함
+            # (배치 실패 시 로컬 큐에 다시 enqueue되므로 총 4개가 됨)
+            pending = local_queue.get_pending(limit=10)
+            # 최소 2개 이상 pending 상태
+            assert len(pending) >= 2
+
+            # 원본 항목(id=1, 2)의 retry_count가 증가했는지 확인
+            original_items = [item for item in pending if item.id in (1, 2)]
+            assert len(original_items) == 2
+            for item in original_items:
+                assert item.retry_count == 1
+
+    async def test_flush_batch_queue(
+        self,
+        sync_service: SyncService,
+        sample_gfx_json: Path,
+        mock_supabase_client: MagicMock,
+    ) -> None:
+        """배치 큐 강제 플러시."""
+        with patch("src.sync_agent.sync_service.create_client") as mock_create:
+            mock_create.return_value = mock_supabase_client
+
+            # modified 이벤트로 배치 큐에 추가
+            await sync_service.sync_file(str(sample_gfx_json), "modified")
+
+            # 배치 큐에 항목이 있는지 확인
+            assert sync_service.batch_queue.pending_count == 1
+
+            # upsert 성공
+            mock_supabase_client.table.return_value.upsert.return_value.execute.return_value = (
+                MagicMock(data=[{"id": 1}])
+            )
+
+            # 강제 플러시
+            count = await sync_service.flush_batch_queue()
+
+            assert count == 1
+            assert sync_service.batch_queue.pending_count == 0
 
     async def test_health_check_success(
         self, sync_service: SyncService, mock_supabase_client: MagicMock
@@ -283,9 +275,20 @@ class TestSyncService:
             mock_create.return_value = mock_supabase_client
 
             # 연결 실패 시뮬레이션
-            mock_supabase_client.table.return_value.select.return_value.limit.return_value.execute.side_effect = (
-                Exception("Connection refused")
+            mock_supabase_client.table.return_value.select.return_value.limit.return_value.execute.side_effect = Exception(
+                "Connection refused"
             )
 
             result = await sync_service.health_check()
             assert result is False
+
+    def test_get_stats(
+        self, sync_service: SyncService, local_queue: LocalQueue
+    ) -> None:
+        """서비스 통계 정보."""
+        stats = sync_service.get_stats()
+
+        assert "batch_queue" in stats
+        assert "offline_queue_pending" in stats
+        assert "supabase_url" in stats
+        assert stats["supabase_url"] == "https://test.supabase.co"

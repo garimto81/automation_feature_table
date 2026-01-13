@@ -14,7 +14,6 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Any
 
 from src.sync_agent.config import SyncAgentSettings
 from src.sync_agent.file_handler import GFXFileWatcher

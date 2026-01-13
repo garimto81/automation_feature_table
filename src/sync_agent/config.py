@@ -35,6 +35,10 @@ class SyncAgentSettings(BaseSettings):
     max_retries: int = Field(default=5)
     queue_process_interval: int = Field(default=60)
 
+    # 배치 처리 설정 (FT-0011)
+    batch_size: int = Field(default=500, description="배치 최대 크기")
+    flush_interval: float = Field(default=5.0, description="배치 플러시 간격 (초)")
+
     # 로깅
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_path: str = Field(

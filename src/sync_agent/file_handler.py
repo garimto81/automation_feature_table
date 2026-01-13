@@ -151,6 +151,23 @@ class GFXFileWatcher:
         self._running = True
         logger.info(f"Watching: {self.settings.gfx_watch_path}")
 
+        # 기존 파일 스캔
+        await self._scan_existing_files()
+
+    async def _scan_existing_files(self) -> None:
+        """시작 시 기존 파일 스캔 및 동기화."""
+        watch_path = Path(self.settings.gfx_watch_path)
+        pattern = "PGFX_live_data_export GameID=*.json"
+
+        existing_files = list(watch_path.glob(pattern))
+        if existing_files:
+            logger.info(f"기존 파일 {len(existing_files)}개 발견, 동기화 시작...")
+            for file_path in existing_files:
+                try:
+                    await self.sync_service.sync_file(str(file_path), "existing")
+                except Exception as e:
+                    logger.error(f"기존 파일 동기화 실패: {file_path.name} - {e}")
+
     async def stop(self) -> None:
         """감시 중지."""
         if self._observer:

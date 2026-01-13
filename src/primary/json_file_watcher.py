@@ -536,7 +536,9 @@ class SupabaseJSONFileWatcher:
     - Incremental sync: on file modification, only new hands are added
 
     Usage:
-        watcher = SupabaseJSONFileWatcher(settings, supabase, session_repo, sync_log_repo, hands_repo)
+        watcher = SupabaseJSONFileWatcher(
+            settings, supabase, session_repo, sync_log_repo, hands_repo
+        )
         async for result in watcher.listen():
             process(result)
     """
