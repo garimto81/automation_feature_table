@@ -53,15 +53,15 @@ class TestSimulatorGUILayout:
         source_input = sidebar.locator("input").first
         expect(source_input).to_be_visible()
 
-    def test_interval_slider(self, page: Page, streamlit_server: str) -> None:
-        """Should have interval slider in sidebar."""
+    def test_interval_input(self, page: Page, streamlit_server: str) -> None:
+        """Should have interval number input in sidebar."""
         page.goto(streamlit_server)
         page.wait_for_load_state("networkidle")
 
-        # Find slider
+        # Find number input for interval (st.number_input)
         sidebar = page.locator("[data-testid='stSidebar']")
-        slider = sidebar.locator("[data-testid='stSlider']")
-        expect(slider).to_be_visible()
+        number_input = sidebar.locator("[data-testid='stNumberInput']")
+        expect(number_input).to_be_visible()
 
 
 @pytest.mark.e2e
@@ -133,21 +133,21 @@ class TestManualImportTab:
 class TestInteraction:
     """Tests for user interactions."""
 
-    def test_change_interval_slider(self, page: Page, streamlit_server: str) -> None:
-        """Should be able to change interval slider value."""
+    def test_change_interval_input(self, page: Page, streamlit_server: str) -> None:
+        """Should be able to change interval number input value."""
         page.goto(streamlit_server)
         page.wait_for_load_state("networkidle")
 
-        # Find slider in sidebar
+        # Find number input in sidebar
         sidebar = page.locator("[data-testid='stSidebar']")
-        slider = sidebar.locator("[data-testid='stSlider']")
+        number_input = sidebar.locator("[data-testid='stNumberInput']")
 
-        # Get slider input
-        slider_input = slider.locator("input[type='range']")
-        expect(slider_input).to_be_visible()
+        # Get the actual input field
+        input_field = number_input.locator("input[type='number']")
+        expect(input_field).to_be_visible()
 
-        # Change value (this tests that the slider is interactive)
-        slider_input.fill("30")
+        # Change value (this tests that the input is interactive)
+        input_field.fill("30")
 
     def test_enter_source_path(self, page: Page, streamlit_server: str) -> None:
         """Should be able to enter source path."""
@@ -241,13 +241,16 @@ class TestSimulationFlow:
 
         sidebar = page.locator("[data-testid='stSidebar']")
 
-        # Check for control buttons
-        buttons = sidebar.locator("button")
-        expect(buttons.first).to_be_visible()
+        # Check for control buttons using Streamlit's button container
+        # Streamlit renders buttons inside stButton containers
+        buttons = sidebar.locator("[data-testid='stBaseButton-secondary'], [data-testid='stBaseButton-primary']")
 
-        # At minimum, should have start and reset buttons
+        # Wait a bit for buttons to render
+        page.wait_for_timeout(500)
+
+        # At minimum, should have scan and start buttons
         button_count = buttons.count()
-        assert button_count >= 2, "Should have at least Start and Reset buttons"
+        assert button_count >= 2, f"Should have at least 2 buttons, found {button_count}"
 
 
 @pytest.mark.e2e
