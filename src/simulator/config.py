@@ -61,6 +61,20 @@ class SimulatorSettings(BaseSettings):
         description="Streamlit server port",
     )
 
+    # History settings
+    history_enabled: bool = Field(
+        default=True,
+        description="Enable processing history tracking",
+    )
+    warn_on_duplicate: bool = Field(
+        default=True,
+        description="Show warning when re-processing already processed files",
+    )
+    auto_resume_enabled: bool = Field(
+        default=False,
+        description="Automatically resume from last checkpoint on start",
+    )
+
 
 def get_simulator_settings() -> SimulatorSettings:
     """Get simulator settings instance."""

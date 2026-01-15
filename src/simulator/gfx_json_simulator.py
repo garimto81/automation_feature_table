@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -20,6 +21,16 @@ from typing import Any
 
 from src.simulator.config import SimulatorSettings, get_simulator_settings
 from src.simulator.hand_splitter import HandSplitter
+from src.simulator.history import (
+    CheckpointData,
+    FileProcessingRecord,
+    FileStatus,
+    HistoryManager,
+    RunMode,
+    SessionStatus,
+    SimulationSession,
+    get_history_manager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +141,11 @@ class GFXJsonSimulator:
     target_path: Path
     interval: int = 60
     settings: SimulatorSettings = field(default_factory=get_simulator_settings)
+    run_mode: RunMode = RunMode.ALL
+
+    # History management
+    history_manager: HistoryManager = field(default_factory=get_history_manager)
+    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     # State
     status: Status = field(default=Status.IDLE, init=False)
@@ -143,6 +159,8 @@ class GFXJsonSimulator:
     _checkpoint: SimulationCheckpoint = field(
         default_factory=SimulationCheckpoint, init=False
     )
+    _file_start_times: dict[str, datetime] = field(default_factory=dict, init=False)
+    _last_checkpoint_save: float = field(default=0.0, init=False)
 
     def __post_init__(self) -> None:
         """Initialize after dataclass creation."""
@@ -202,6 +220,102 @@ class GFXJsonSimulator:
         """Get current checkpoint for pause/resume."""
         return self._checkpoint
 
+    def check_file_status(self, file_path: Path) -> tuple[FileStatus, datetime | None]:
+        """Check if file has been processed and get last processing time.
+
+        Args:
+            file_path: Path to check.
+
+        Returns:
+            Tuple of (FileStatus, last_processed_at or None).
+        """
+        if not self.settings.history_enabled:
+            return FileStatus.NEW, None
+
+        status, record = self.history_manager.get_file_status(
+            str(self.source_path), file_path
+        )
+        last_processed = record.processed_at if record else None
+        return status, last_processed
+
+    def _save_checkpoint_debounced(self) -> None:
+        """Save checkpoint with debounce (every 5 seconds max)."""
+        if not self.settings.history_enabled:
+            return
+
+        now = time.time()
+        if now - self._last_checkpoint_save >= 5.0:
+            checkpoint_data = CheckpointData(
+                session_id=self.session_id,
+                file_index=self._checkpoint.file_index,
+                hand_index=self._checkpoint.hand_index,
+                timestamp=self._checkpoint.timestamp,
+            )
+            self.history_manager.save_checkpoint(checkpoint_data)
+            self._last_checkpoint_save = now
+
+    def _create_session(self, files_total: int) -> None:
+        """Create and save simulation session."""
+        if not self.settings.history_enabled:
+            return
+
+        session = SimulationSession(
+            session_id=self.session_id,
+            started_at=datetime.now(),
+            ended_at=None,
+            source_path=str(self.source_path),
+            target_path=str(self.target_path),
+            files_total=files_total,
+            files_completed=0,
+            status=SessionStatus.RUNNING.value,
+        )
+        self.history_manager.add_session(session)
+
+    def _update_session(
+        self,
+        files_completed: int,
+        status: SessionStatus,
+    ) -> None:
+        """Update session status."""
+        if not self.settings.history_enabled:
+            return
+
+        session = SimulationSession(
+            session_id=self.session_id,
+            started_at=self.progress.start_time or datetime.now(),
+            ended_at=datetime.now() if status != SessionStatus.RUNNING else None,
+            source_path=str(self.source_path),
+            target_path=str(self.target_path),
+            files_total=self.progress.total_hands,
+            files_completed=files_completed,
+            status=status.value,
+        )
+        self.history_manager.add_session(session)
+
+    def _add_file_record(
+        self,
+        file_path: Path,
+        hand_count: int,
+        status: str,
+    ) -> None:
+        """Add file processing record."""
+        if not self.settings.history_enabled:
+            return
+
+        start_time = self._file_start_times.get(str(file_path), datetime.now())
+        duration = (datetime.now() - start_time).total_seconds()
+
+        record = FileProcessingRecord(
+            file_path=str(file_path),
+            file_hash=self.history_manager.calculate_file_hash(file_path),
+            processed_at=datetime.now(),
+            hand_count=hand_count,
+            duration_sec=duration,
+            status=status,
+            session_id=self.session_id,
+        )
+        self.history_manager.add_record(str(self.source_path), record)
+
     def get_logs(self, limit: int = 20) -> list[LogEntry]:
         """Get recent logs."""
         return self.logs[-limit:]
@@ -247,6 +361,10 @@ class GFXJsonSimulator:
         Returns:
             True if successful, False otherwise
         """
+        # Record start time for duration calculation
+        self._file_start_times[str(json_path)] = datetime.now()
+        hand_count = 0
+
         try:
             # Read and parse JSON
             data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -255,7 +373,10 @@ class GFXJsonSimulator:
 
             if not hands:
                 self._log(f"No hands found in {json_path.name}", "WARNING")
+                self._add_file_record(json_path, 0, "completed")
                 return True
+
+            hand_count = len(hands)
 
             # Determine relative path for output
             rel_path = json_path.relative_to(self.source_path)
@@ -276,11 +397,13 @@ class GFXJsonSimulator:
                 await self._wait_if_paused()
 
                 if self._stop_requested:
+                    self._add_file_record(json_path, i - 1, "partial")
                     return False
 
                 # Update checkpoint
                 self._checkpoint.hand_index = i
                 self._checkpoint.timestamp = datetime.now()
+                self._save_checkpoint_debounced()
 
                 # Build cumulative JSON
                 cumulative = HandSplitter.build_cumulative(hands, i, metadata)
@@ -289,6 +412,7 @@ class GFXJsonSimulator:
                 # Write to target
                 if not self._write_with_retry(output_path, content):
                     self.status = Status.ERROR
+                    self._add_file_record(json_path, i - 1, "failed")
                     return False
 
                 self.progress.current_hand += 1
@@ -299,13 +423,16 @@ class GFXJsonSimulator:
                     await asyncio.sleep(self.interval)
 
             self._log(f"Completed: {rel_path}", "SUCCESS", table_name)
+            self._add_file_record(json_path, hand_count, "completed")
             return True
 
         except json.JSONDecodeError as e:
             self._log(f"JSON parse error in {json_path.name}: {e}", "ERROR")
+            self._add_file_record(json_path, 0, "failed")
             return False
         except Exception as e:
             self._log(f"Error processing {json_path.name}: {e}", "ERROR")
+            self._add_file_record(json_path, hand_count, "failed")
             return False
 
     async def run(self) -> None:
@@ -318,10 +445,11 @@ class GFXJsonSimulator:
         self._log(f"Source: {self.source_path}")
         self._log(f"Target: {self.target_path}")
         self._log(f"Interval: {self.interval}s")
+        self._log(f"Run mode: {self.run_mode.value}")
 
         # Use selected files if provided, otherwise discover
         if self._selected_files:
-            json_files = self._selected_files
+            json_files = list(self._selected_files)
             self._log(f"Using {len(json_files)} selected files")
         else:
             json_files = self._discover_json_files()
@@ -330,6 +458,17 @@ class GFXJsonSimulator:
             self._log("No JSON files found", "WARNING")
             self.status = Status.COMPLETED
             return
+
+        # Filter files based on run mode
+        if self.run_mode == RunMode.NEW_ONLY:
+            original_count = len(json_files)
+            json_files = self._filter_new_files(json_files)
+            filtered_count = original_count - len(json_files)
+            if filtered_count > 0:
+                self._log(f"Filtered {filtered_count} already processed files")
+
+        # Create session
+        self._create_session(len(json_files))
 
         # Calculate total hands
         total_hands = 0
@@ -343,12 +482,22 @@ class GFXJsonSimulator:
         self.progress.total_hands = total_hands
         self._log(f"Total hands to process: {total_hands}")
 
+        # Handle resume mode
+        start_file_idx = 0
+        if self.run_mode == RunMode.RESUME:
+            checkpoint = self.history_manager.load_checkpoint()
+            if checkpoint and checkpoint.session_id:
+                start_file_idx = checkpoint.file_index
+                self._log(f"Resuming from file index {start_file_idx}")
+
         # Process each file
-        for file_idx, json_path in enumerate(json_files):
+        files_completed = 0
+        for file_idx, json_path in enumerate(json_files[start_file_idx:], start=start_file_idx):
             # Check for pause before processing file
             await self._wait_if_paused()
 
             if self._stop_requested:
+                self._update_session(files_completed, SessionStatus.STOPPED)
                 break
 
             # Update checkpoint
@@ -358,12 +507,41 @@ class GFXJsonSimulator:
             self.progress.current_file = json_path.name
             success = await self.simulate_file(json_path)
 
+            if success:
+                files_completed += 1
+
             if not success and self.status == Status.ERROR:
+                self._update_session(files_completed, SessionStatus.ERROR)
                 break
 
         if not self._stop_requested and self.status != Status.ERROR:
             self.status = Status.COMPLETED
+            self._update_session(files_completed, SessionStatus.COMPLETED)
+            self.history_manager.clear_checkpoint()
             self._log("Simulation completed successfully", "SUCCESS")
+
+    def _filter_new_files(self, files: list[Path]) -> list[Path]:
+        """Filter to only include new/unprocessed files.
+
+        Args:
+            files: List of files to filter.
+
+        Returns:
+            List of files that haven't been processed.
+        """
+        new_files = []
+        for f in files:
+            status, _ = self.check_file_status(f)
+            if status == FileStatus.NEW:
+                new_files.append(f)
+            elif status == FileStatus.PROCESSED_CHANGED:
+                # Include changed files with warning
+                self._log(
+                    f"File changed since last processing: {f.name}",
+                    "WARNING",
+                )
+                new_files.append(f)
+        return new_files
 
     def run_sync(self) -> None:
         """Run simulation synchronously (for CLI)."""

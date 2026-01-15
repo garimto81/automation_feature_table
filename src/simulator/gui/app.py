@@ -34,6 +34,11 @@ from src.simulator.gui.file_browser import (
     scan_json_files,
     select_folder,
 )
+from src.simulator.history import (
+    FileStatus,
+    RunMode,
+    get_history_manager,
+)
 
 
 def format_duration(seconds: float) -> str:
@@ -194,6 +199,126 @@ def render_manual_import_tab() -> None:
         st.caption("Fallback 폴더에 파일이 없습니다.")
 
 
+def render_history_tab() -> None:
+    """Render the processing history tab."""
+    st.header("📊 처리 이력")
+
+    history_mgr = st.session_state.history_manager
+    source_path = st.session_state.source_path
+
+    if not source_path:
+        st.info("👆 좌측에서 소스 경로를 먼저 설정하세요.")
+        return
+
+    # Get records for current source
+    records = history_mgr.get_records(source_path)
+    # Normalize path separators for comparison
+    normalized_source = source_path.replace("\\", "/")
+    sessions = [
+        s for s in history_mgr.history.sessions
+        if s.source_path == source_path
+        or s.source_path.replace("\\", "/") == normalized_source
+    ]
+
+    # Sessions section
+    st.subheader("📁 세션 기록")
+
+    if sessions:
+        # Sort by start time (newest first)
+        sessions = sorted(sessions, key=lambda s: s.started_at, reverse=True)
+
+        for session in sessions[:10]:
+            status_icons = {
+                "running": "🟢",
+                "paused": "🟡",
+                "completed": "✅",
+                "stopped": "🟠",
+                "error": "❌",
+            }
+            icon = status_icons.get(session.status, "⚪")
+
+            with st.expander(
+                f"{icon} {session.started_at.strftime('%Y-%m-%d %H:%M')} "
+                f"({session.files_completed}/{session.files_total} 파일)"
+            ):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text(f"세션 ID: {session.session_id[:8]}...")
+                    st.text(f"시작: {session.started_at.strftime('%H:%M:%S')}")
+                    if session.ended_at:
+                        duration = (session.ended_at - session.started_at).total_seconds()
+                        st.text(f"종료: {session.ended_at.strftime('%H:%M:%S')}")
+                        st.text(f"소요: {format_duration(duration)}")
+                with col2:
+                    st.text(f"상태: {session.status}")
+                    st.text(f"처리: {session.files_completed}/{session.files_total}")
+    else:
+        st.caption("세션 기록이 없습니다.")
+
+    st.divider()
+
+    # Files section
+    st.subheader("📋 파일 처리 기록")
+
+    if records:
+        # Sort by processed time (newest first)
+        records = sorted(records, key=lambda r: r.processed_at, reverse=True)
+
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            completed = sum(1 for r in records if r.status == "completed")
+            st.metric("완료", f"{completed}개")
+        with col2:
+            total_hands = sum(r.hand_count for r in records)
+            st.metric("총 핸드", f"{total_hands}개")
+        with col3:
+            total_duration = sum(r.duration_sec for r in records)
+            st.metric("총 소요", format_duration(total_duration))
+
+        st.divider()
+
+        # File table
+        for record in records[:30]:
+            status_icons = {
+                "completed": "✅",
+                "partial": "⚠️",
+                "failed": "❌",
+            }
+            icon = status_icons.get(record.status, "⚪")
+            file_name = Path(record.file_path).name
+
+            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+            with col1:
+                st.text(f"{icon} {file_name}")
+            with col2:
+                st.text(f"{record.hand_count} 핸드")
+            with col3:
+                st.text(record.processed_at.strftime("%m-%d %H:%M"))
+            with col4:
+                st.text(format_duration(record.duration_sec))
+
+        if len(records) > 30:
+            st.caption(f"... 외 {len(records) - 30}개 파일")
+    else:
+        st.caption("처리 기록이 없습니다.")
+
+    st.divider()
+
+    # Actions
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🗑️ 이 소스의 이력 초기화", type="secondary"):
+            history_mgr.clear_records(source_path)
+            st.success("이력이 초기화되었습니다.")
+            st.rerun()
+    with col2:
+        if st.button("🗑️ 전체 이력 초기화", type="secondary"):
+            history_mgr.clear_all()
+            st.success("전체 이력이 초기화되었습니다.")
+            st.rerun()
+
+
 def main() -> None:
     """Main Streamlit app."""
     st.set_page_config(
@@ -227,6 +352,10 @@ def main() -> None:
     if "saved_interval" not in st.session_state:
         # 저장된 interval 로드
         st.session_state.saved_interval = get_last_interval()
+    if "run_mode" not in st.session_state:
+        st.session_state.run_mode = RunMode.ALL.value
+    if "history_manager" not in st.session_state:
+        st.session_state.history_manager = get_history_manager()
 
     settings = get_simulator_settings()
 
@@ -331,6 +460,34 @@ def main() -> None:
         )
         st.session_state.parallel_mode = parallel_mode
 
+        # Run mode selection
+        st.subheader("🎯 실행 모드")
+
+        # Check if checkpoint exists for resume option
+        history_mgr = st.session_state.history_manager
+        has_checkpoint = history_mgr.load_checkpoint() is not None
+
+        run_mode_options = {
+            RunMode.ALL.value: "전체 재실행",
+            RunMode.NEW_ONLY.value: "새 파일만",
+        }
+        if has_checkpoint:
+            run_mode_options[RunMode.RESUME.value] = "이어서 실행"
+
+        run_mode = st.radio(
+            "실행 모드",
+            options=list(run_mode_options.keys()),
+            format_func=lambda x: run_mode_options[x],
+            index=list(run_mode_options.keys()).index(st.session_state.run_mode)
+            if st.session_state.run_mode in run_mode_options
+            else 0,
+            label_visibility="collapsed",
+            help="새 파일만: 이전에 처리하지 않은 파일만 실행\n"
+                 "전체 재실행: 모든 선택 파일 실행\n"
+                 "이어서 실행: 마지막 checkpoint부터 재개",
+        )
+        st.session_state.run_mode = run_mode
+
         st.divider()
 
         # === Control Buttons ===
@@ -364,6 +521,9 @@ def main() -> None:
                         Path(f["path"]) for f in st.session_state.selected_files
                     ]
 
+                    # Get selected run mode
+                    selected_run_mode = RunMode(st.session_state.run_mode)
+
                     if st.session_state.parallel_mode:
                         # Parallel mode: use orchestrator
                         st.session_state.orchestrator = ParallelSimulationOrchestrator(
@@ -379,11 +539,12 @@ def main() -> None:
                             daemon=True,
                         )
                     else:
-                        # Sequential mode: use simulator
+                        # Sequential mode: use simulator with run_mode
                         st.session_state.simulator = GFXJsonSimulator(
                             source_path=source,
                             target_path=target,
                             interval=interval,
+                            run_mode=selected_run_mode,
                         )
                         st.session_state.simulator._selected_files = selected_paths
                         st.session_state.orchestrator = None
@@ -441,23 +602,73 @@ def main() -> None:
                 st.rerun()
 
         with col4:
-            # Reset button
-            if st.button("🔄 초기화", use_container_width=True):
+            # Reset button with options
+            reset_option = st.selectbox(
+                "초기화",
+                options=["선택...", "🔄 선택 초기화", "🗑️ 전체 초기화", "📋 이력 초기화"],
+                label_visibility="collapsed",
+                key="reset_select",
+            )
+
+            if reset_option == "🔄 선택 초기화":
+                # Reset only selection, keep paths
                 st.session_state.simulator = None
                 st.session_state.orchestrator = None
                 st.session_state.thread = None
                 st.session_state.scanned_files = []
                 st.session_state.selected_files = []
                 st.rerun()
+            elif reset_option == "🗑️ 전체 초기화":
+                # Full reset including paths
+                st.session_state.simulator = None
+                st.session_state.orchestrator = None
+                st.session_state.thread = None
+                st.session_state.scanned_files = []
+                st.session_state.selected_files = []
+                st.session_state.source_path = ""
+                st.session_state.target_path = ""
+                st.session_state.run_mode = RunMode.ALL.value
+                st.rerun()
+            elif reset_option == "📋 이력 초기화":
+                # Clear history for current source
+                if st.session_state.source_path:
+                    history_mgr = st.session_state.history_manager
+                    history_mgr.clear_records(st.session_state.source_path)
+                    st.success("이력이 초기화되었습니다.")
+                    st.rerun()
+                else:
+                    st.warning("소스 경로를 먼저 설정하세요.")
 
     # === Main Content with Tabs ===
-    main_tab1, main_tab2 = st.tabs(["🎴 시뮬레이터", "📥 수동 Import"])
+    main_tab1, main_tab2, main_tab3 = st.tabs(
+        ["🎴 시뮬레이터", "📊 처리 이력", "📥 수동 Import"]
+    )
+
+    with main_tab3:
+        render_manual_import_tab()
 
     with main_tab2:
-        render_manual_import_tab()
+        render_history_tab()
 
     with main_tab1:
         render_simulator_tab(interval)
+
+
+def get_file_status_display(file_path: str, source_path: str) -> str:
+    """Get display string for file processing status."""
+    history_mgr = st.session_state.history_manager
+    status, record = history_mgr.get_file_status(source_path, Path(file_path))
+
+    if status == FileStatus.NEW:
+        return " ✨ 새 파일"
+    elif status == FileStatus.PROCESSED_UNCHANGED:
+        if record:
+            time_str = record.processed_at.strftime("%m-%d %H:%M")
+            return f" ⚠️ 처리됨({time_str})"
+        return " ⚠️ 처리됨"
+    elif status == FileStatus.PROCESSED_CHANGED:
+        return " 🔄 변경됨"
+    return ""
 
 
 def render_simulator_tab(interval: float) -> None:
@@ -469,6 +680,8 @@ def render_simulator_tab(interval: float) -> None:
     # File selection section
     if st.session_state.scanned_files:
         st.header("📋 파일 선택")
+
+        source_path = st.session_state.source_path
 
         # Group files by table
         tables: dict[str, list[dict[str, Any]]] = {}
@@ -500,8 +713,12 @@ def render_simulator_tab(interval: float) -> None:
 
                         for f in table_files:
                             display = format_file_display(f)
+                            # Add history status
+                            status_display = get_file_status_display(f["path"], source_path)
+                            display_with_status = f"{display}{status_display}"
+
                             selected = st.checkbox(
-                                display,
+                                display_with_status,
                                 value=select_all
                                 or f in st.session_state.selected_files,
                                 key=f"file_{f['path']}",
@@ -520,8 +737,12 @@ def render_simulator_tab(interval: float) -> None:
                 all_selected = []
                 for f in table_files:
                     display = format_file_display(f)
+                    # Add history status
+                    status_display = get_file_status_display(f["path"], source_path)
+                    display_with_status = f"{display}{status_display}"
+
                     selected = st.checkbox(
-                        display,
+                        display_with_status,
                         value=select_all or f in st.session_state.selected_files,
                         key=f"file_{f['path']}",
                     )
