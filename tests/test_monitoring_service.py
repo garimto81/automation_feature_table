@@ -339,3 +339,434 @@ class TestNotInitialized:
         result = await service.get_dashboard_state()
 
         assert result == {}
+
+    async def test_update_current_hand_not_initialized(self, mock_db_manager):
+        """Test that update_current_hand does nothing when not initialized."""
+        service = MonitoringService(mock_db_manager)
+
+        # Should not raise, just return silently
+        await service.update_current_hand("table_a", 42)
+
+    async def test_record_hand_grade_not_initialized(self, mock_db_manager):
+        """Test that record_hand_grade does nothing when not initialized."""
+        service = MonitoringService(mock_db_manager)
+
+        mock_grade = MagicMock()
+        # Should not raise, just return silently
+        await service.record_hand_grade(1, mock_grade)
+
+
+class TestRepoProperty:
+    """Tests for repo property access."""
+
+    def test_repo_property_raises_when_not_initialized(self, mock_db_manager):
+        """Test that accessing repo raises RuntimeError when not initialized."""
+        service = MonitoringService(mock_db_manager)
+
+        with pytest.raises(RuntimeError, match="MonitoringService not initialized"):
+            _ = service.repo
+
+
+class TestConnectionAlerts:
+    """Tests for connection alert generation."""
+
+    async def test_primary_connection_lost_alert(self, monitoring_service, mock_repo):
+        """Test alert when primary connection is lost."""
+        # Set up initial connected state
+        monitoring_service._table_statuses["table_a"] = {"primary_connected": True}
+
+        with patch.object(
+            monitoring_service.alert_manager, "alert_connection_lost"
+        ) as mock_alert:
+            await monitoring_service.update_table_connection(
+                table_id="table_a",
+                primary_connected=False,
+            )
+
+            mock_alert.assert_called_once_with("table_a", "primary")
+
+    async def test_primary_connection_restored_alert(self, monitoring_service, mock_repo):
+        """Test alert when primary connection is restored."""
+        # Set up initial disconnected state
+        monitoring_service._table_statuses["table_a"] = {"primary_connected": False}
+
+        with patch.object(
+            monitoring_service.alert_manager, "alert_connection_restored"
+        ) as mock_alert:
+            await monitoring_service.update_table_connection(
+                table_id="table_a",
+                primary_connected=True,
+            )
+
+            mock_alert.assert_called_once_with("table_a", "primary")
+
+    async def test_secondary_connection_lost_alert(self, monitoring_service, mock_repo):
+        """Test alert when secondary connection is lost."""
+        # Set up initial connected state
+        monitoring_service._table_statuses["table_a"] = {"secondary_connected": True}
+
+        with patch.object(
+            monitoring_service.alert_manager, "alert_connection_lost"
+        ) as mock_alert:
+            await monitoring_service.update_table_connection(
+                table_id="table_a",
+                secondary_connected=False,
+            )
+
+            mock_alert.assert_called_once_with("table_a", "secondary")
+
+    async def test_secondary_connection_restored_alert(self, monitoring_service, mock_repo):
+        """Test alert when secondary connection is restored."""
+        # Set up initial disconnected state
+        monitoring_service._table_statuses["table_a"] = {"secondary_connected": False}
+
+        with patch.object(
+            monitoring_service.alert_manager, "alert_connection_restored"
+        ) as mock_alert:
+            await monitoring_service.update_table_connection(
+                table_id="table_a",
+                secondary_connected=True,
+            )
+
+            mock_alert.assert_called_once_with("table_a", "secondary")
+
+
+class TestUpdateCurrentHandErrors:
+    """Tests for error handling in update_current_hand."""
+
+    async def test_update_current_hand_handles_exception(
+        self, monitoring_service, mock_repo
+    ):
+        """Test that exceptions are caught and logged."""
+        mock_repo.upsert_table_status.side_effect = Exception("DB error")
+
+        # Should not raise, just log error
+        await monitoring_service.update_current_hand("table_a", 42)
+
+
+class TestUpdateFusionResultErrors:
+    """Tests for error handling in update_fusion_result."""
+
+    async def test_update_fusion_result_handles_exception(
+        self, monitoring_service, mock_repo
+    ):
+        """Test that exceptions are caught and logged."""
+        mock_repo.upsert_table_status.side_effect = Exception("DB error")
+
+        result = FusedHandResult(
+            table_id="table_a",
+            hand_number=1,
+            hand_rank=HandRank.FULL_HOUSE,
+            confidence=1.0,
+            source=SourceType.PRIMARY,
+            primary_result=None,
+            secondary_result=None,
+            cross_validated=True,
+            requires_review=False,
+            timestamp=datetime.now(UTC),
+        )
+
+        # Should not raise, just log error
+        await monitoring_service.update_fusion_result("table_a", result)
+
+    async def test_update_fusion_result_primary_only(self, monitoring_service, mock_repo):
+        """Test fusion result update for primary_only case."""
+        result = FusedHandResult(
+            table_id="table_a",
+            hand_number=1,
+            hand_rank=HandRank.FULL_HOUSE,
+            confidence=1.0,
+            source=SourceType.PRIMARY,
+            primary_result=None,
+            secondary_result=None,
+            cross_validated=False,
+            requires_review=False,
+            timestamp=datetime.now(UTC),
+        )
+
+        await monitoring_service.update_fusion_result("table_a", result)
+
+        mock_repo.upsert_table_status.assert_called_once_with(
+            table_id="table_a",
+            last_fusion_result="primary_only",
+        )
+
+
+class TestHandGradeAlerts:
+    """Tests for hand grade alert generation."""
+
+    async def test_grade_a_hand_generates_alert(self, monitoring_service):
+        """Test that Grade A hand generates alert."""
+        from src.grading.grader import GradeResult
+
+        grade_result = GradeResult(
+            grade="A",
+            has_premium_hand=True,
+            has_long_playtime=True,
+            has_premium_board_combo=True,
+            conditions_met=3,
+            broadcast_eligible=True,
+        )
+
+        with patch.object(
+            monitoring_service.alert_manager, "alert_grade_a_hand"
+        ) as mock_alert:
+            await monitoring_service.record_hand_grade(
+                hand_id=123,
+                grade_result=grade_result,
+                table_id="table_a",
+                hand_number=42,
+            )
+
+            mock_alert.assert_called_once_with(
+                table_id="table_a",
+                hand_number=42,
+                hand_rank="Premium Hand",
+                conditions_met=["premium_hand", "long_playtime", "board_combo"],
+            )
+
+    async def test_grade_b_hand_no_alert(self, monitoring_service):
+        """Test that Grade B hand does not generate alert."""
+        from src.grading.grader import GradeResult
+
+        grade_result = GradeResult(
+            grade="B",
+            has_premium_hand=False,
+            has_long_playtime=True,
+            has_premium_board_combo=True,
+            conditions_met=2,
+            broadcast_eligible=True,
+        )
+
+        with patch.object(
+            monitoring_service.alert_manager, "alert_grade_a_hand"
+        ) as mock_alert:
+            await monitoring_service.record_hand_grade(
+                hand_id=123,
+                grade_result=grade_result,
+                table_id="table_a",
+                hand_number=42,
+            )
+
+            mock_alert.assert_not_called()
+
+
+class TestRecordingSessionAutoId:
+    """Tests for recording session auto-generated ID."""
+
+    async def test_start_recording_session_auto_id_format(
+        self, monitoring_service, mock_repo
+    ):
+        """Test that auto-generated session ID has expected format."""
+        mock_session = MagicMock()
+        mock_session.session_id = None  # Force auto-generation
+        mock_repo.create_recording_session.return_value = mock_session
+
+        session_id = await monitoring_service.start_recording_session(
+            table_id="table_xyz",
+            hand_number=999,
+        )
+
+        # Session ID should contain table_id and hand_number
+        assert session_id is not None
+        assert "table_xyz" in session_id
+        assert "999" in session_id
+
+
+class TestExceptionHandling:
+    """Tests for exception handling in various methods."""
+
+    async def test_update_table_connection_handles_exception(
+        self, monitoring_service, mock_repo
+    ):
+        """Test exception handling in update_table_connection."""
+        mock_repo.upsert_table_status.side_effect = Exception("DB error")
+
+        # Should not raise
+        await monitoring_service.update_table_connection(
+            table_id="table_a", primary_connected=True
+        )
+
+    async def test_start_recording_session_exception(self, monitoring_service, mock_repo):
+        """Test exception handling in start_recording_session."""
+        mock_repo.create_recording_session.side_effect = Exception("DB error")
+
+        result = await monitoring_service.start_recording_session("table_a", 42)
+
+        assert result is None
+
+    async def test_start_recording_session_not_initialized(self, mock_db_manager):
+        """Test start_recording_session when not initialized."""
+        service = MonitoringService(mock_db_manager)
+
+        result = await service.start_recording_session("table_a", 42)
+
+        assert result is None
+
+    async def test_stop_recording_session_not_initialized(self, mock_db_manager):
+        """Test stop_recording_session when not initialized."""
+        service = MonitoringService(mock_db_manager)
+
+        # Should not raise
+        await service.stop_recording_session("table_a")
+
+    async def test_log_health_exception(self, monitoring_service, mock_repo):
+        """Test exception handling in log_health."""
+        mock_repo.log_health.side_effect = Exception("DB error")
+
+        # Should not raise
+        await monitoring_service.log_health("vMix", "connected")
+
+
+class TestVMixHealthCheck:
+    """Tests for vMix health checking."""
+
+    async def test_check_and_log_vmix_health_not_initialized(self, mock_db_manager):
+        """Test check_and_log_vmix_health when not initialized."""
+        service = MonitoringService(mock_db_manager)
+        mock_client = MagicMock()
+
+        # Should not raise
+        await service.check_and_log_vmix_health(mock_client)
+
+    async def test_check_and_log_vmix_health_connected(self, monitoring_service, mock_repo):
+        """Test check_and_log_vmix_health with successful connection."""
+        from src.vmix.client import VMixClient
+
+        mock_client = AsyncMock(spec=VMixClient)
+        mock_client.ping = AsyncMock(return_value=True)
+
+        await monitoring_service.check_and_log_vmix_health(mock_client)
+
+        # Should log health
+        mock_repo.log_health.assert_called_once()
+        call_args = mock_repo.log_health.call_args
+        assert call_args.kwargs["service_name"] == "vMix"
+        assert call_args.kwargs["status"] == "connected"
+        assert call_args.kwargs["latency_ms"] is not None
+
+    async def test_check_and_log_vmix_health_disconnected(
+        self, monitoring_service, mock_repo
+    ):
+        """Test check_and_log_vmix_health with failed connection."""
+        from src.vmix.client import VMixClient
+
+        mock_client = AsyncMock(spec=VMixClient)
+        mock_client.ping = AsyncMock(return_value=False)
+
+        await monitoring_service.check_and_log_vmix_health(mock_client)
+
+        # Should log health
+        mock_repo.log_health.assert_called_once()
+        call_args = mock_repo.log_health.call_args
+        assert call_args.kwargs["service_name"] == "vMix"
+        assert call_args.kwargs["status"] == "disconnected"
+
+    async def test_check_and_log_vmix_health_exception(
+        self, monitoring_service, mock_repo
+    ):
+        """Test check_and_log_vmix_health with exception."""
+        from src.vmix.client import VMixClient
+
+        mock_client = AsyncMock(spec=VMixClient)
+        mock_client.ping = AsyncMock(side_effect=Exception("Connection error"))
+
+        await monitoring_service.check_and_log_vmix_health(mock_client)
+
+        # Should log error status
+        mock_repo.log_health.assert_called_once()
+        call_args = mock_repo.log_health.call_args
+        assert call_args.kwargs["service_name"] == "vMix"
+        assert call_args.kwargs["status"] == "error"
+
+    async def test_check_and_log_vmix_health_wrong_type(
+        self, monitoring_service, mock_repo
+    ):
+        """Test check_and_log_vmix_health with wrong client type."""
+        mock_client = MagicMock()  # Not a VMixClient instance
+
+        await monitoring_service.check_and_log_vmix_health(mock_client)
+
+        # Should not log anything
+        mock_repo.log_health.assert_not_called()
+
+
+class TestRecordingFileInfo:
+    """Tests for recording file info updates."""
+
+    async def test_update_recording_file_info(self, monitoring_service, mock_repo):
+        """Test updating recording file info."""
+        # Start a recording session
+        mock_session = MagicMock()
+        mock_session.session_id = "session_123"
+        mock_repo.create_recording_session.return_value = mock_session
+        await monitoring_service.start_recording_session("table_a", 42, "session_123")
+
+        # Create recording session object with file info
+        from src.recording.session import RecordingSession
+
+        rec_session = RecordingSession(
+            table_id="table_a",
+            hand_number=42,
+            file_path="/path/to/file.mp4",
+            file_size_bytes=1024 * 1024 * 256,  # 256 MB
+        )
+
+        await monitoring_service.update_recording_file_info(rec_session)
+
+        mock_repo.update_recording_session.assert_called()
+
+    async def test_update_recording_file_info_not_initialized(self, mock_db_manager):
+        """Test update_recording_file_info when not initialized."""
+        service = MonitoringService(mock_db_manager)
+
+        from src.recording.session import RecordingSession
+
+        rec_session = RecordingSession(
+            table_id="table_a",
+            hand_number=42,
+            file_path="/path/to/file.mp4",
+        )
+
+        # Should not raise
+        await service.update_recording_file_info(rec_session)
+
+    async def test_update_recording_file_info_no_active_session(
+        self, monitoring_service, mock_repo
+    ):
+        """Test update_recording_file_info when no active session."""
+        from src.recording.session import RecordingSession
+
+        rec_session = RecordingSession(
+            table_id="table_a",
+            hand_number=42,
+            file_path="/path/to/file.mp4",
+        )
+
+        await monitoring_service.update_recording_file_info(rec_session)
+
+        # Should not update anything
+        mock_repo.update_recording_session.assert_not_called()
+
+    async def test_update_recording_file_info_exception(
+        self, monitoring_service, mock_repo
+    ):
+        """Test update_recording_file_info with exception."""
+        # Start a recording session
+        mock_session = MagicMock()
+        mock_session.session_id = "session_123"
+        mock_repo.create_recording_session.return_value = mock_session
+        await monitoring_service.start_recording_session("table_a", 42, "session_123")
+
+        mock_repo.update_recording_session.side_effect = Exception("DB error")
+
+        from src.recording.session import RecordingSession
+
+        rec_session = RecordingSession(
+            table_id="table_a",
+            hand_number=42,
+            file_path="/path/to/file.mp4",
+        )
+
+        # Should not raise
+        await monitoring_service.update_recording_file_info(rec_session)

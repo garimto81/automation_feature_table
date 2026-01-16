@@ -1,4 +1,7 @@
-"""Tests for secondary modules: gemini_live and video_capture."""
+"""Tests for secondary modules: gemini_live and video_capture.
+
+Note: cv2 is mocked globally in conftest.py to ensure consistent behavior.
+"""
 
 import json
 import sys
@@ -9,21 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-# Mock cv2 before importing modules that depend on it
-mock_cv2 = MagicMock()
-mock_cv2.VideoCapture = MagicMock()
-mock_cv2.CAP_PROP_BUFFERSIZE = 38
-mock_cv2.CAP_PROP_FRAME_WIDTH = 3
-mock_cv2.CAP_PROP_FRAME_HEIGHT = 4
-mock_cv2.CAP_PROP_FPS = 5
-mock_cv2.IMWRITE_JPEG_QUALITY = 1
-mock_cv2.imencode = MagicMock(
-    return_value=(True, np.array([0xFF, 0xD8, 0xFF, 0xE0], dtype=np.uint8))
-)
-sys.modules["cv2"] = mock_cv2
-
-from src.models.hand import AIVideoResult, Card, HandRank  # noqa: E402
-from src.secondary.video_capture import VideoCapture, VideoFrame  # noqa: E402
+from src.models.hand import AIVideoResult, Card, HandRank
+from src.secondary.video_capture import VideoCapture, VideoFrame
 
 # ============================================================================
 # Mock Classes
@@ -105,9 +95,7 @@ class TestVideoFrame:
             frame_number=1,
         )
 
-        # Mock imencode to return proper JPEG bytes
-        mock_cv2.imencode.return_value = (True, np.array([0xFF, 0xD8, 0xFF, 0xE0], dtype=np.uint8))
-
+        # cv2.imencode is mocked in conftest.py
         jpeg_bytes = frame.to_jpeg(quality=80)
 
         assert isinstance(jpeg_bytes, bytes)

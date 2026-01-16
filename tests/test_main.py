@@ -1,18 +1,11 @@
 """Tests for main application module."""
 
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
-
-# Mock cv2 before importing main module
-mock_cv2 = MagicMock()
-mock_cv2.VideoCapture = MagicMock()
-mock_cv2.CAP_PROP_BUFFERSIZE = 38
-sys.modules["cv2"] = mock_cv2
 
 
 # ============================================================================
