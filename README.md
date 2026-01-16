@@ -1,5 +1,9 @@
 # Poker Hand Auto-Capture System
 
+[![CI](https://github.com/garimto81/automation_feature_table/actions/workflows/ci.yml/badge.svg)](https://github.com/garimto81/automation_feature_table/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 PokerGFX 기반 멀티테이블 포커 핸드 자동 캡처 및 분류 시스템
 
 ## 개요
