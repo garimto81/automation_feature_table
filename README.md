@@ -1,6 +1,7 @@
 # Poker Hand Auto-Capture System
 
 [![CI](https://github.com/garimto81/automation_feature_table/actions/workflows/ci.yml/badge.svg)](https://github.com/garimto81/automation_feature_table/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/garimto81/automation_feature_table/graph/badge.svg)](https://codecov.io/gh/garimto81/automation_feature_table)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
