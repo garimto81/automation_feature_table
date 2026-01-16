@@ -107,35 +107,41 @@ class TestGFXFileHandler:
 
     def test_ignores_directories(
         self,
-        file_handler: GFXFileHandler,
         mock_sync_service: MagicMock,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         """디렉토리 이벤트 무시."""
+        loop = asyncio.new_event_loop()
+        file_handler = GFXFileHandler(
+            sync_service=mock_sync_service,
+            loop=loop,
+            debounce_seconds=0.1,
+        )
         event = DirCreatedEvent("C:/GFX/output/subdir")
 
         file_handler.on_created(event)
 
-        # 디바운스 대기
-        event_loop.run_until_complete(asyncio.sleep(0.2))
-
-        mock_sync_service.sync_file.assert_not_called()
+        # 디렉토리는 무시되므로 pending에 등록되지 않아야 함
+        assert event.src_path not in file_handler._pending
+        loop.close()
 
     def test_ignores_non_matching_files(
         self,
-        file_handler: GFXFileHandler,
         mock_sync_service: MagicMock,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         """패턴 불일치 파일 무시."""
+        loop = asyncio.new_event_loop()
+        file_handler = GFXFileHandler(
+            sync_service=mock_sync_service,
+            loop=loop,
+            debounce_seconds=0.1,
+        )
         event = FileCreatedEvent("C:/GFX/output/config.json")
 
         file_handler.on_created(event)
 
-        # 디바운스 대기
-        event_loop.run_until_complete(asyncio.sleep(0.2))
-
-        mock_sync_service.sync_file.assert_not_called()
+        # 패턴 불일치 파일은 pending에 등록되지 않아야 함
+        assert event.src_path not in file_handler._pending
+        loop.close()
 
     async def test_debounce_rapid_events(
         self,
