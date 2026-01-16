@@ -337,12 +337,31 @@ class TestHandStartEndEvents:
         result = client._parse_hand_event(event)
 
         # hand_start should trigger table session tracking
-        assert result is not None or result is None  # Implementation dependent
-        # TODO: Should store hand_start in session tracker
+        assert result is None  # hand_start는 None 반환
+        assert "feature_table_1" in client._active_sessions  # 세션 저장 확인
+        session = client._active_sessions["feature_table_1"]
+        assert session.hand_number == 12345
+        assert session.dealer_seat == 3
+        assert session.small_blind == 500
+        assert session.big_blind == 1000
+        assert session.completed is False
 
     def test_parse_hand_end_event(self, client):
         """Test parsing hand_end event."""
-        event = {
+        # 먼저 hand_start로 세션 생성
+        start_event = {
+            "event": "hand_start",
+            "table_id": "feature_table_1",
+            "hand_number": 12345,
+            "timestamp": "2025-01-15T14:30:00.000Z",
+            "dealer_seat": 3,
+            "small_blind": 500,
+            "big_blind": 1000,
+        }
+        client._parse_hand_event(start_event)
+
+        # hand_end 이벤트 처리
+        end_event = {
             "event": "hand_end",
             "table_id": "feature_table_1",
             "hand_number": 12345,
@@ -351,11 +370,13 @@ class TestHandStartEndEvents:
             "pot": 25000,
         }
 
-        result = client._parse_hand_event(event)
+        result = client._parse_hand_event(end_event)
 
         # hand_end should trigger session end
-        assert result is not None or result is None  # Implementation dependent
-        # TODO: Should mark session complete
+        assert result is None  # hand_end는 None 반환
+        session = client._active_sessions["feature_table_1"]
+        assert session.completed is True
+        assert session.end_time is not None
 
 
 class TestCardValidation:
