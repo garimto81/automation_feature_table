@@ -400,7 +400,7 @@ class GFXHandsRepository:
         """
         result = (
             self.supabase.client.table("gfx_hands")
-            .select("id", count="exact")  # type: ignore[arg-type]
+            .select("id", count="exact")
             .eq("session_id", session_id)
             .execute()
         )

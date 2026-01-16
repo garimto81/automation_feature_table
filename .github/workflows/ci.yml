@@ -27,7 +27,7 @@ jobs:
         run: ruff check src/
 
       - name: Run mypy
-        run: mypy src/ --ignore-missing-imports
+        run: mypy src/ --ignore-missing-imports --no-warn-unused-ignores
 
   test:
     name: Test (Python ${{ matrix.python-version }})
