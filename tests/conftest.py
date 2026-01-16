@@ -2,23 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Generator
-
 import pytest
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create an event loop for the test session.
-
-    This ensures all async tests share the same event loop,
-    preventing conflicts with Playwright E2E tests.
-    """
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

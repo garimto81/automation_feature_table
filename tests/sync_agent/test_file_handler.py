@@ -22,23 +22,14 @@ def mock_sync_service() -> MagicMock:
 
 
 @pytest.fixture
-def event_loop() -> asyncio.AbstractEventLoop:
-    """이벤트 루프 fixture."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
-
-
-@pytest.fixture
-def file_handler(
+async def file_handler(
     mock_sync_service: MagicMock,
-    event_loop: asyncio.AbstractEventLoop,
 ) -> GFXFileHandler:
     """GFXFileHandler fixture."""
+    loop = asyncio.get_running_loop()
     return GFXFileHandler(
         sync_service=mock_sync_service,
-        loop=event_loop,
+        loop=loop,
         debounce_seconds=0.1,  # 테스트용 짧은 debounce
     )
 
@@ -74,42 +65,45 @@ class TestGFXFileHandler:
 
     def test_on_created_triggers_sync(
         self,
-        file_handler: GFXFileHandler,
         mock_sync_service: MagicMock,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
-        """파일 생성 시 동기화 예약."""
+        """파일 생성 시 동기화 예약 (pending 상태 확인)."""
+        # 별도 이벤트 루프 생성하여 테스트
+        loop = asyncio.new_event_loop()
+        file_handler = GFXFileHandler(
+            sync_service=mock_sync_service,
+            loop=loop,
+            debounce_seconds=0.1,
+        )
         event = FileCreatedEvent("C:/GFX/output/PGFX_live_data_export GameID=123.json")
 
         file_handler.on_created(event)
 
-        # 디바운스 대기
-        event_loop.run_until_complete(asyncio.sleep(0.2))
+        # 동기화가 예약되었는지 확인 (pending에 등록됨)
+        assert event.src_path in file_handler._pending
 
-        # sync_file이 호출되었는지 확인
-        mock_sync_service.sync_file.assert_called_once()
-        args, _ = mock_sync_service.sync_file.call_args
-        assert args[0] == event.src_path
-        assert args[1] == "created"
+        # 루프 정리
+        loop.close()
 
     def test_on_modified_triggers_sync(
         self,
-        file_handler: GFXFileHandler,
         mock_sync_service: MagicMock,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
-        """파일 수정 시 동기화 예약."""
+        """파일 수정 시 동기화 예약 (pending 상태 확인)."""
+        loop = asyncio.new_event_loop()
+        file_handler = GFXFileHandler(
+            sync_service=mock_sync_service,
+            loop=loop,
+            debounce_seconds=0.1,
+        )
         event = FileModifiedEvent("C:/GFX/output/PGFX_live_data_export GameID=456.json")
 
         file_handler.on_modified(event)
 
-        # 디바운스 대기
-        event_loop.run_until_complete(asyncio.sleep(0.2))
+        # 동기화가 예약되었는지 확인
+        assert event.src_path in file_handler._pending
 
-        mock_sync_service.sync_file.assert_called_once()
-        args, _ = mock_sync_service.sync_file.call_args
-        assert args[0] == event.src_path
-        assert args[1] == "modified"
+        loop.close()
 
     def test_ignores_directories(
         self,

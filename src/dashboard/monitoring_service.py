@@ -3,6 +3,40 @@
 This service acts as the bridge between the main capture system and the dashboard,
 synchronizing table status, hand grades, and recording sessions to the database.
 Also provides alert system for connection failures and Grade A hand detection.
+
+WebSocket Update Strategy:
+-------------------------
+The dashboard state is updated via `get_dashboard_state()` which should be called:
+
+1. **Event-driven updates** (recommended for low-latency):
+   - On hand completion (grade calculated)
+   - On connection state change (primary/secondary)
+   - On recording session start/stop
+   - On Grade A hand detection (alert)
+
+2. **Periodic polling** (fallback/backup):
+   - Recommended interval: 5-10 seconds
+   - Maximum interval: 30 seconds (beyond this, user experience degrades)
+
+Example usage with WebSocket:
+```python
+# Event-driven (preferred)
+async def on_hand_complete(result: FusedHandResult):
+    await monitoring_service.update_fusion_result(table_id, result)
+    state = await monitoring_service.get_dashboard_state()
+    await websocket.broadcast(state)
+
+# Periodic polling (backup)
+async def periodic_sync():
+    while True:
+        state = await monitoring_service.get_dashboard_state()
+        await websocket.broadcast(state)
+        await asyncio.sleep(DASHBOARD_UPDATE_INTERVAL_SEC)
+```
+
+Constants:
+- DASHBOARD_UPDATE_INTERVAL_SEC: Recommended polling interval (default: 5 seconds)
+- DASHBOARD_MAX_STALENESS_SEC: Maximum acceptable staleness (default: 30 seconds)
 """
 
 import logging
@@ -19,6 +53,27 @@ if TYPE_CHECKING:
     from src.recording.session import RecordingSession
 
 logger = logging.getLogger(__name__)
+
+# WebSocket/Dashboard update configuration
+DASHBOARD_UPDATE_INTERVAL_SEC: int = 5
+"""Recommended polling interval for dashboard state updates (seconds).
+
+Use event-driven updates when possible for lower latency.
+This interval is for periodic backup polling.
+"""
+
+DASHBOARD_MAX_STALENESS_SEC: int = 30
+"""Maximum acceptable staleness for dashboard data (seconds).
+
+If the dashboard has not received an update within this time,
+it should display a stale data warning to the user.
+"""
+
+HEALTH_CHECK_INTERVAL_SEC: int = 60
+"""Interval for system health checks (seconds).
+
+Health checks for PostgreSQL, PokerGFX, Gemini, vMix connections.
+"""
 
 
 class MonitoringService:

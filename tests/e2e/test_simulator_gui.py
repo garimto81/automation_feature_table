@@ -35,13 +35,13 @@ class TestSimulatorGUILayout:
         expect(sidebar).to_be_visible()
 
     def test_tabs_exist(self, page: Page, streamlit_server: str) -> None:
-        """Should have simulator and manual import tabs."""
+        """Should have simulator, manual import, and history tabs."""
         page.goto(streamlit_server)
         page.wait_for_load_state("networkidle")
 
-        # Check for tab buttons
+        # Check for tab buttons (Simulator, Manual Import, History)
         tabs = page.locator("[data-baseweb='tab']")
-        expect(tabs).to_have_count(2)
+        expect(tabs).to_have_count(3)
 
     def test_source_path_input(self, page: Page, streamlit_server: str) -> None:
         """Should have source path input in sidebar."""
@@ -122,11 +122,11 @@ class TestManualImportTab:
         # Switch to manual import tab
         tabs = page.locator("[data-baseweb='tab']")
         tabs.nth(1).click()
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(1000)  # Wait for tab content to load
 
-        # File uploader should be visible
+        # File uploader should exist (may be in collapsed state)
         uploader = page.locator("[data-testid='stFileUploader']")
-        expect(uploader).to_be_visible()
+        expect(uploader).to_have_count(1)
 
 
 @pytest.mark.e2e

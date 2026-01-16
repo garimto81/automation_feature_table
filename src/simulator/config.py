@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -40,25 +40,30 @@ class SimulatorSettings(BaseSettings):
     interval_sec: int = Field(
         default=60,
         ge=1,
-        description="Interval between hand generations in seconds",
+        le=3600,  # Max 1 hour between hands
+        description="Interval between hand generations in seconds (1-3600)",
     )
 
     # Retry settings
     retry_count: int = Field(
         default=3,
         ge=1,
-        description="Number of retries on NAS write failure",
+        le=10,  # Max 10 retries
+        description="Number of retries on NAS write failure (1-10)",
     )
     retry_delay_sec: int = Field(
         default=5,
         ge=1,
-        description="Delay between retries in seconds",
+        le=60,  # Max 1 minute between retries
+        description="Delay between retries in seconds (1-60)",
     )
 
     # Streamlit
     streamlit_port: int = Field(
         default=8501,
-        description="Streamlit server port",
+        ge=1024,
+        le=65535,
+        description="Streamlit server port (1024-65535)",
     )
 
     # History settings
@@ -74,6 +79,29 @@ class SimulatorSettings(BaseSettings):
         default=False,
         description="Automatically resume from last checkpoint on start",
     )
+
+    @field_validator("source_path", "nas_path", mode="before")
+    @classmethod
+    def validate_path_not_empty(cls, v: Any) -> Path:
+        """Validate that path is not empty."""
+        if v is None:
+            return Path(".")
+        path = Path(v) if isinstance(v, str) else v
+        if str(path).strip() == "":
+            raise ValueError("Path cannot be empty")
+        return path
+
+    @model_validator(mode="after")
+    def validate_paths_exist_warning(self) -> SimulatorSettings:
+        """Log warning if paths don't exist (but don't fail).
+
+        This is a soft validation - paths will be created on write.
+        """
+        if not self.source_path.exists():
+            logger.warning(f"Source path does not exist: {self.source_path}")
+        if not self.nas_path.exists():
+            logger.debug(f"Target path does not exist (will be created): {self.nas_path}")
+        return self
 
 
 def get_simulator_settings() -> SimulatorSettings:

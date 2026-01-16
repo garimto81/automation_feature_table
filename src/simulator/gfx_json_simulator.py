@@ -8,16 +8,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import sys
+import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from src.simulator.config import SimulatorSettings, get_simulator_settings
 from src.simulator.hand_splitter import HandSplitter
@@ -33,6 +36,25 @@ from src.simulator.history import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Type definitions for better type safety
+class CheckpointDict(TypedDict):
+    """Type for checkpoint dictionary."""
+
+    file_index: int
+    hand_index: int
+    timestamp: str
+
+
+class SimulationMetrics(TypedDict):
+    """Metrics for simulation performance monitoring."""
+
+    files_processed: int
+    total_hands_processed: int
+    avg_hand_processing_time_ms: float
+    error_count: int
+    retry_count: int
 
 
 class Status(Enum):
@@ -115,13 +137,13 @@ class SimulationCheckpoint:
     hand_index: int = 0
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> CheckpointDict:
         """Convert to dictionary."""
-        return {
-            "file_index": self.file_index,
-            "hand_index": self.hand_index,
-            "timestamp": self.timestamp.isoformat(),
-        }
+        return CheckpointDict(
+            file_index=self.file_index,
+            hand_index=self.hand_index,
+            timestamp=self.timestamp.isoformat(),
+        )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SimulationCheckpoint:
@@ -135,7 +157,11 @@ class SimulationCheckpoint:
 
 @dataclass
 class GFXJsonSimulator:
-    """Simulator for generating cumulative GFX JSON files."""
+    """Simulator for generating cumulative GFX JSON files.
+
+    Thread-safety: Progress updates are protected by _progress_lock.
+    Memory: Logs use deque with maxlen for efficient circular buffer.
+    """
 
     source_path: Path
     target_path: Path
@@ -152,7 +178,10 @@ class GFXJsonSimulator:
     progress: SimulationProgress = field(
         default_factory=SimulationProgress, init=False
     )
-    logs: list[LogEntry] = field(default_factory=list, init=False)
+    # Use deque for memory-efficient log rotation (O(1) instead of O(n))
+    logs: deque[LogEntry] = field(
+        default_factory=lambda: deque(maxlen=100), init=False
+    )
     _stop_requested: bool = field(default=False, init=False)
     _selected_files: list[Path] = field(default_factory=list, init=False)
     _pause_event: asyncio.Event = field(default_factory=asyncio.Event, init=False)
@@ -161,6 +190,20 @@ class GFXJsonSimulator:
     )
     _file_start_times: dict[str, datetime] = field(default_factory=dict, init=False)
     _last_checkpoint_save: float = field(default=0.0, init=False)
+    # Thread safety for progress updates
+    _progress_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
+    # Performance metrics
+    _metrics: SimulationMetrics = field(
+        default_factory=lambda: SimulationMetrics(
+            files_processed=0,
+            total_hands_processed=0,
+            avg_hand_processing_time_ms=0.0,
+            error_count=0,
+            retry_count=0,
+        ),
+        init=False,
+    )
+    _hand_processing_times: list[float] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         """Initialize after dataclass creation."""
@@ -173,17 +216,19 @@ class GFXJsonSimulator:
         level: str = "INFO",
         table_name: str = "",
     ) -> None:
-        """Add log entry."""
+        """Add log entry.
+
+        Thread-safe: deque.append() is atomic in CPython.
+        Memory-efficient: deque(maxlen=100) auto-rotates.
+        """
         entry = LogEntry(
             timestamp=datetime.now(),
             level=level,
             message=message,
             table_name=table_name,
         )
+        # deque(maxlen=100) auto-rotates, no manual slicing needed (O(1))
         self.logs.append(entry)
-        # Keep only last 100 logs
-        if len(self.logs) > 100:
-            self.logs = self.logs[-100:]
 
         # Also log to console
         log_func = getattr(logger, level.lower(), logger.info)
@@ -318,10 +363,52 @@ class GFXJsonSimulator:
 
     def get_logs(self, limit: int = 20) -> list[LogEntry]:
         """Get recent logs."""
-        return self.logs[-limit:]
+        return list(self.logs)[-limit:]
+
+    def get_metrics(self) -> SimulationMetrics:
+        """Get current simulation metrics."""
+        with self._progress_lock:
+            return SimulationMetrics(
+                files_processed=self._metrics["files_processed"],
+                total_hands_processed=self._metrics["total_hands_processed"],
+                avg_hand_processing_time_ms=self._metrics["avg_hand_processing_time_ms"],
+                error_count=self._metrics["error_count"],
+                retry_count=self._metrics["retry_count"],
+            )
+
+    def _update_metrics(
+        self,
+        *,
+        hand_time_ms: float | None = None,
+        file_completed: bool = False,
+        error: bool = False,
+        retry: bool = False,
+    ) -> None:
+        """Update simulation metrics thread-safely."""
+        with self._progress_lock:
+            if hand_time_ms is not None:
+                self._hand_processing_times.append(hand_time_ms)
+                self._metrics["total_hands_processed"] += 1
+                # Keep rolling average
+                if self._hand_processing_times:
+                    self._metrics["avg_hand_processing_time_ms"] = (
+                        sum(self._hand_processing_times) / len(self._hand_processing_times)
+                    )
+            if file_completed:
+                self._metrics["files_processed"] += 1
+            if error:
+                self._metrics["error_count"] += 1
+            if retry:
+                self._metrics["retry_count"] += 1
 
     def _write_with_retry(self, path: Path, content: str) -> bool:
         """Write file with retry logic.
+
+        Handles specific OS errors:
+        - PermissionError: Access denied (no retry)
+        - ENOSPC: No space left on device (no retry)
+        - EROFS: Read-only file system (no retry)
+        - Other OSError: Retry with delay
 
         Args:
             path: Target file path
@@ -335,15 +422,42 @@ class GFXJsonSimulator:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
                 return True
-            except OSError as e:
+            except PermissionError as e:
+                # No point retrying permission errors
                 self._log(
-                    f"Write failed (attempt {attempt}/{self.settings.retry_count}): {e}",
-                    "WARNING",
+                    f"Permission denied (no retry): {path} - {e}",
+                    "ERROR",
                 )
-                if attempt < self.settings.retry_count:
-                    time.sleep(self.settings.retry_delay_sec)
+                self._update_metrics(error=True)
+                return False
+            except OSError as e:
+                # Handle specific OS error codes
+                if e.errno == errno.ENOSPC:
+                    self._log(
+                        f"No disk space left on device: {path}",
+                        "ERROR",
+                    )
+                    self._update_metrics(error=True)
+                    return False
+                elif e.errno == errno.EROFS:
+                    self._log(
+                        f"Read-only file system: {path}",
+                        "ERROR",
+                    )
+                    self._update_metrics(error=True)
+                    return False
+                else:
+                    # Retriable OS errors (network, temporary issues)
+                    self._log(
+                        f"Write failed (attempt {attempt}/{self.settings.retry_count}): {e}",
+                        "WARNING",
+                    )
+                    self._update_metrics(retry=True)
+                    if attempt < self.settings.retry_count:
+                        time.sleep(self.settings.retry_delay_sec)
 
         self._log(f"Failed to write after {self.settings.retry_count} attempts", "ERROR")
+        self._update_metrics(error=True)
         return False
 
     def _discover_json_files(self) -> list[Path]:
@@ -393,6 +507,8 @@ class GFXJsonSimulator:
 
             # Simulate each hand
             for i in range(1, len(hands) + 1):
+                hand_start_time = time.time()
+
                 # Check for pause before processing
                 await self._wait_if_paused()
 
@@ -415,7 +531,14 @@ class GFXJsonSimulator:
                     self._add_file_record(json_path, i - 1, "failed")
                     return False
 
-                self.progress.current_hand += 1
+                # Thread-safe progress update
+                with self._progress_lock:
+                    self.progress.current_hand += 1
+
+                # Update metrics
+                hand_time_ms = (time.time() - hand_start_time) * 1000
+                self._update_metrics(hand_time_ms=hand_time_ms)
+
                 self._log(f"Hand {i}/{len(hands)} generated", "SUCCESS", table_name)
 
                 # Wait for interval (except last hand)
@@ -424,15 +547,28 @@ class GFXJsonSimulator:
 
             self._log(f"Completed: {rel_path}", "SUCCESS", table_name)
             self._add_file_record(json_path, hand_count, "completed")
+            self._update_metrics(file_completed=True)
             return True
 
         except json.JSONDecodeError as e:
             self._log(f"JSON parse error in {json_path.name}: {e}", "ERROR")
             self._add_file_record(json_path, 0, "failed")
+            self._update_metrics(error=True)
+            return False
+        except PermissionError as e:
+            self._log(f"Permission denied reading {json_path.name}: {e}", "ERROR")
+            self._add_file_record(json_path, 0, "failed")
+            self._update_metrics(error=True)
+            return False
+        except FileNotFoundError as e:
+            self._log(f"File not found: {json_path.name}: {e}", "ERROR")
+            self._add_file_record(json_path, 0, "failed")
+            self._update_metrics(error=True)
             return False
         except Exception as e:
             self._log(f"Error processing {json_path.name}: {e}", "ERROR")
             self._add_file_record(json_path, hand_count, "failed")
+            self._update_metrics(error=True)
             return False
 
     async def run(self) -> None:
@@ -550,7 +686,11 @@ class GFXJsonSimulator:
 
 @dataclass
 class TableSimulationTask:
-    """Task for simulating a single table's files."""
+    """Task for simulating a single table's files.
+
+    Thread-safety: Progress updates are protected by _progress_lock.
+    Memory: Logs use deque with maxlen for efficient circular buffer.
+    """
 
     table_name: str
     files: list[Path]
@@ -563,20 +703,23 @@ class TableSimulationTask:
     progress: SimulationProgress = field(
         default_factory=SimulationProgress, init=False
     )
-    logs: list[LogEntry] = field(default_factory=list, init=False)
+    # Use deque for memory-efficient log rotation (O(1))
+    logs: deque[LogEntry] = field(
+        default_factory=lambda: deque(maxlen=50), init=False
+    )
     _stop_requested: bool = field(default=False, init=False)
+    _progress_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
 
     def _log(self, message: str, level: str = "INFO") -> None:
-        """Add log entry."""
+        """Add log entry (thread-safe, memory-efficient)."""
         entry = LogEntry(
             timestamp=datetime.now(),
             level=level,
             message=message,
             table_name=self.table_name,
         )
+        # deque(maxlen=50) auto-rotates (O(1))
         self.logs.append(entry)
-        if len(self.logs) > 50:
-            self.logs = self.logs[-50:]
         logger.info(str(entry))
 
     def stop(self) -> None:
@@ -616,7 +759,14 @@ class TableSimulationTask:
         return True
 
     async def _simulate_file(self, json_path: Path) -> bool:
-        """Simulate single file for this table."""
+        """Simulate single file for this table.
+
+        Handles specific exceptions:
+        - json.JSONDecodeError: Invalid JSON format
+        - PermissionError: Access denied
+        - FileNotFoundError: File removed during processing
+        - OSError: Disk/network errors (with specific errno handling)
+        """
         try:
             data = json.loads(json_path.read_text(encoding="utf-8"))
             hands = HandSplitter.split_hands(data)
@@ -635,19 +785,43 @@ class TableSimulationTask:
                 cumulative = HandSplitter.build_cumulative(hands, i, metadata)
                 content = json.dumps(cumulative, indent=2, ensure_ascii=False)
 
-                # Write with retry
+                # Write with retry and specific error handling
+                write_success = False
                 for attempt in range(1, self.settings.retry_count + 1):
                     try:
                         output_path.parent.mkdir(parents=True, exist_ok=True)
                         output_path.write_text(content, encoding="utf-8")
+                        write_success = True
                         break
-                    except OSError:
-                        if attempt == self.settings.retry_count:
+                    except PermissionError as e:
+                        self._log(f"Permission denied: {output_path} - {e}", "ERROR")
+                        self.status = Status.ERROR
+                        return False
+                    except OSError as e:
+                        if e.errno == errno.ENOSPC:
+                            self._log(f"No disk space left: {output_path}", "ERROR")
                             self.status = Status.ERROR
                             return False
-                        time.sleep(self.settings.retry_delay_sec)
+                        elif e.errno == errno.EROFS:
+                            self._log(f"Read-only file system: {output_path}", "ERROR")
+                            self.status = Status.ERROR
+                            return False
+                        else:
+                            self._log(
+                                f"Write attempt {attempt}/{self.settings.retry_count} failed: {e}",
+                                "WARNING",
+                            )
+                            if attempt == self.settings.retry_count:
+                                self.status = Status.ERROR
+                                return False
+                            time.sleep(self.settings.retry_delay_sec)
 
-                self.progress.current_hand += 1
+                if not write_success:
+                    return False
+
+                # Thread-safe progress update
+                with self._progress_lock:
+                    self.progress.current_hand += 1
                 self._log(f"Hand {i}/{len(hands)} generated", "SUCCESS")
 
                 if i < len(hands):
@@ -655,14 +829,26 @@ class TableSimulationTask:
 
             return True
 
+        except json.JSONDecodeError as e:
+            self._log(f"JSON parse error in {json_path.name}: {e}", "ERROR")
+            return False
+        except PermissionError as e:
+            self._log(f"Permission denied reading {json_path.name}: {e}", "ERROR")
+            return False
+        except FileNotFoundError as e:
+            self._log(f"File not found: {json_path.name}: {e}", "ERROR")
+            return False
         except Exception as e:
-            self._log(f"Error: {e}", "ERROR")
+            self._log(f"Error processing {json_path.name}: {e}", "ERROR")
             return False
 
 
 @dataclass
 class ParallelSimulationOrchestrator:
-    """Orchestrator for parallel multi-table simulation."""
+    """Orchestrator for parallel multi-table simulation.
+
+    Memory: Logs use deque with maxlen for efficient circular buffer.
+    """
 
     source_path: Path
     target_path: Path
@@ -672,19 +858,21 @@ class ParallelSimulationOrchestrator:
     # State
     status: Status = field(default=Status.IDLE, init=False)
     tasks: dict[str, TableSimulationTask] = field(default_factory=dict, init=False)
-    logs: list[LogEntry] = field(default_factory=list, init=False)
+    # Use deque for memory-efficient log rotation (O(1))
+    logs: deque[LogEntry] = field(
+        default_factory=lambda: deque(maxlen=100), init=False
+    )
     _stop_requested: bool = field(default=False, init=False)
 
     def _log(self, message: str, level: str = "INFO") -> None:
-        """Add log entry."""
+        """Add log entry (memory-efficient)."""
         entry = LogEntry(
             timestamp=datetime.now(),
             level=level,
             message=message,
         )
+        # deque(maxlen=100) auto-rotates (O(1))
         self.logs.append(entry)
-        if len(self.logs) > 100:
-            self.logs = self.logs[-100:]
         logger.info(str(entry))
 
     def _group_files_by_table(self, files: list[Path]) -> dict[str, list[Path]]:
