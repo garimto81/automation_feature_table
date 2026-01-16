@@ -56,6 +56,10 @@ tmpclaude-*
 
 # Simulator settings (local)
 .simulator_settings.json
+.simulator_history.json
+
+# Claude Code local files
+.claude/
 
 # Supabase CLI temp
 supabase/.temp/
